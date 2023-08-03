@@ -1,0 +1,196 @@
+/*
+  Experimenting with a higher-level Window class for
+  termbox. It is not yet functional - just checking the
+  shape of the API.
+*/
+const tb = s2.termbox ||| s2.loadModule2('termbox');
+tb.defaultAttr = {
+    fg: 0, //tb.color.white,
+    bg: 0 //tb.color.black
+};
+const print = proc f(){
+    f.y || (f.y = 0);
+    if(f.y==tb.height()){
+        f.y = 0;
+        tb.clear(fg, bg);
+    }
+    argv.unshift(0, f.y++, fg, bg);
+    tb.print5.apply(undefined,argv);
+    return tb;
+}.importSymbols({
+    tb: tb,
+    fg: tb.defaultAttr.fg,
+    bg: tb.defaultAttr.bg
+});
+tb.outputMode(tb.outputMode.normal);
+//tb.init();
+//tb.clear(tb.defaultAttr.fg, tb.defaultAttr.bg);
+
+var ex = catch {
+    var tWidth = tb.width(true/*init screen if needed*/), tHeight = tb.height();
+    var w = tb.newWindow(tWidth/3,tHeight/3);
+    const wFG = tb.color.white | tb.attr.bold,
+        wBG = tb.color.red | tb.attr.reverse
+    ;
+    print.y = tHeight/2;
+    assert 'Window' === typename w;
+    print('window:', w, ', parent:', w.parent());
+    //w.size(6,8).pos(1,1);
+    print('size =' , w.size(), ', pos = ',w.pos());
+    var ht = w.height(), wt = w.width();
+    w.clear(wFG, wBG).
+        //boxIn().
+        //boxIn(2,2).
+        //boxIn(2).
+        boxIn(1,2).
+        //boxIn(0,1).
+        //boxIn(1,0).
+        //boxIn(2,1).
+        //boxIn(2,0).
+        //boxIn(0). // clears the border
+        // don't use boxIn2()
+        //boxIn2(0x20).//, 0x20).
+        //boxIn2(0x2500, 0x20).
+        //boxIn2(0x2550, 0x2551).
+        /*changeCell(0,0,'┌').
+        changeCell(wt-1, 0, '┐').
+        changeCell(wt-1,ht-1, '┘').
+        changeCell(0, ht-1,'└').
+        hLine(1, 0, wt-2).
+        hLine(1, ht-1, wt-2).
+        vLine(0, 1, ht-2).
+        vLine(wt-1, 1, ht-2).
+        */
+        print5(3, 0, wFG, wBG, "this === ",w)
+    ;
+    unset ht, wt;
+
+    if(1){
+        w.onMove = proc f(){
+            print( this,".onMove(): ",this.pos());
+        }.importSymbols(nameof print);
+    }
+
+    var sub;
+    if(1){
+        var subFg = tb.color.yellow | tb.attr.bold,
+            subBg = tb.color.cyan;
+        sub = w.newSubwin();
+        sub.defaultAttr(subFg, subBg).
+            cursor(0,0)
+        /* Note that the cursor stays at its screen-absolute
+           position if/when this window or a parent is
+           moved. */
+        ;
+
+        sub.onPresent = proc f(){
+            f.counter || (f.counter = 0);
+            ++f.counter;
+            this.print3(0, this.height()-1, "onPresent() counter=",f.counter);
+            print(__FLC,": (",this,").onPresent() counter=",f.counter);
+        };
+
+        sub.onClose = proc f(){
+            print(__FLC,": (",this,").onClose()");
+        };
+
+        print("sub: ",sub, ', parent: ', sub.parent());
+        print('size =' , sub.size(), ', pos = ',sub.pos());
+        sub.clear(subFg, subBg)
+            .print5(0,0,
+                    0, 0, // fg/bg: <=0 == use defaultAttr() values
+                    "This is ",sub,", a subwindow of ",sub.parent());
+    }
+    if(1){
+        var fg = tb.color.red,// | tb.attr.bold,
+        bg = tb.color.white | tb.attr.bold,
+        sub2,
+        subW = 11, subH = 4,
+        subX = w.width()/2-(subW/2)-2,
+        subY = 1,
+        subZ = 1;
+
+        // These if/else blocks should behave the same...
+        if(0){
+            sub2 = w.newSubwin(subW, subH, subX, subY, subZ);
+        }else{
+            sub2 = w.newSubwin();
+            sub2.size(subW, subH).pos(subX, subY, subZ);
+        }
+        assert 1===sub2.posZ();
+        assert 1===sub2.pos().z;
+        assert sub2 === sub2.defaultAttr(fg, bg);
+        var attr = sub2.defaultAttr();
+        assert fg === attr.fg;
+        assert bg === attr.bg;
+        unset attr;
+        sub2.clear().
+            print5(0,0, fg, bg, "Overlapping sub-window.");
+
+    }
+
+    scope {
+        // Checking pos() sematics...
+        var spos = sub.pos(), spos2 = sub.pos(false), sposAbs = sub.pos(true);
+        assert spos.x === spos2.x;
+        assert spos.y === spos2.y;
+        assert spos.x < sposAbs.x;
+        assert spos.y < sposAbs.y;
+    }
+
+    if(1){
+        var pad = tb.newPad(22, 5);
+        var pFg = tb.color.white|tb.attr.bold,
+        pBg = tb.color.blue
+        ;
+        pad.defaultAttr(pFg,pBg).
+            clear().
+            print3(1, 2,
+                   "Drawn via a TbPad (this text is intentionally larger than we will show)").
+            drawTo(w, // target window
+                   0, 2, // src x/y
+                   1, w.height()-1, // tgt x/y
+                   22, 1 // src width/height
+                  ).
+            clear().
+            print3(0,2, "Drawn via").
+            print3(0,3, pad).
+            drawTo(sub, 0, 2, 4, 3, 15, 2)
+        ;
+    }
+
+
+    if(1){
+        w.newSubwin(w.width()/2, w.height()/2, 1, 3, -1).
+            defaultAttr(tb.color.white|tb.attr.underline,
+                        tb.color.blue).
+            clear().
+            print3(0,2,"Surprise! Underlapping window.")
+        ;                
+    }
+
+    print("Tap a key to move window.");
+    //w.present();
+    tb.present();
+    tb.poll();
+    var pos = w.pos();
+    pos.x += 3;
+    pos.y += 2;
+    w.pos( pos.x, pos.y );//.size( tWidth/3*2, 5 );
+    // notice how the cursor() stays where it was if it was enabled.
+    unset pos;
+
+    print("Tap a key to close sub window.");
+    w.present();
+    //tb.present();
+    tb.poll();
+    sub.close();
+    print("Tap a key to quit.");
+    //w.present();
+    tb.present().poll();
+    //tb.poll();
+    //tb.shutdown();
+};
+//tb.shutdown(); // "should" happen when the last top-level window goes.
+ex && throw ex; // wait until tb screen mode is done
+s2.io.print(__FLC,"Done!");

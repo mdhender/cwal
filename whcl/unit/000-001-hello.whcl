@@ -1,0 +1,26 @@
+#pragma trace-assert 2
+#assert [pragma trace-assert]
+decl apis [whcl install-api]
+assert [info is-string $apis]
+assert [apis index-of json] >= 0
+whcl install-api os
+const getenv whcl[os][getenv]
+assert $getenv
+assert [info is-function $getenv]
+#pragma trace-assert 1
+affirm [getenv "HOME"]
+#pragma trace-assert 2
+affirm [getenv HOME]
+affirm [info is-declared getenv]
+affirm [info is-function $getenv]
+affirm [info has-function $getenv]
+affirm [info is-numeric '12.34']
+affirm ![info is-number '12.34']
+affirm [info
+        is-string
+        '12.34'
+        # ^^^ newlines are stripped inside [...] blocks
+        ]
+
+#exit "'exit' ends the script - no further commands will run."
+#assert /* not reached! */ false

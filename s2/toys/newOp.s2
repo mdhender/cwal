@@ -1,0 +1,167 @@
+/**
+  Demonstration of a JS-like 'new' operator, implemented as a script-side
+  function...
+*/
+
+/**
+  Expects Klass an Object with a "constructor" Function property or to
+  be a Function which acts as a constructor. This function does the
+  following:
+
+  - Creates a new Object
+
+  - Sets its prototype to Klass
+
+  - apply()s the constructor function (Klass.constructor or Klass) to
+  the new object. The 2nd and subsequent arguments passed to this
+  function are passed on as the arguments to the constructor. Note
+  that the return value of the constructor is ignored - this routine
+  always...
+
+  - returns the new object.
+
+  All exceptions are propagated.
+
+  In addition:
+
+  If Klass.prototype.constructor is callable then a function symbol
+  called super is defined for the duration of the constructor call,
+  which applies Klass.prototype.constructor to the new object,
+  effectively forwarding the constructor call. If
+  Klass.prototype.constructor is not callable then super is undefined.
+*/
+const noo = proc(Klass, …){ /* yes, … is a legal identifier, but here it's just for show! */
+    affirm Klass;
+    var ctor;
+    if(s2.isCallable(Klass.constructor)){
+        ctor = Klass.constructor;
+    }else if(s2.isCallable(Klass)){
+        ctor = Klass;
+    }else{
+        throw "noo() requires a Function or an Object parameter with a 'constructor' Function property.";
+    }
+    const rc = {
+        prototype: argv.shift() // === Klass
+    };
+    // optionally define a super() pseudo-method, callable from the
+    // ctor, which forwards the arguments to the parent ctor
+    // but with the derived 'this':
+    (Klass.prototype && s2.isCallable(Klass.prototype.constructor))
+    ? const super = proc(){
+        proxy.apply(that, argv);
+      }.importSymbols({that: rc, proxy: Klass.prototype.constructor})
+    : 0;
+    ctor.apply(rc, argv);
+    return rc;
+};
+/**
+   Intended to be passed a "class" suitable for use as the first
+   parameter to noo(), it returns a Function which proxies
+   noo(Klass,...), passing on all arguments as the 2nd and subsequent
+   arguments to noo().
+*/
+noo.createNooMethod = proc(Klass){
+    return proc(){
+        argv.unshift(parentClass);
+        return newOp.apply(newOp, argv);
+    }.importSymbols({parentClass: Klass, newOp: this})
+};
+
+/* Everything below this line is just demonstration of how to use
+   noo()...
+*/
+
+assert catch{ noo({},"hi") }.message.indexOf("'constructor'") > 0;
+
+if(1){
+    const Foo = proc(a,b){
+        print(__FLC, typename this, "constructor");
+        this.a = a;
+        this.b = b;
+    };
+    Foo.__typename = 'Foo';
+
+    /**
+      In JS we would set methods on Foo.prototype, but in s2 that
+      would add them to the base-most Function prototype, so instead we
+      add them to Foo, which directly inherits from the prototype unction.
+    */
+    Foo.do = proc(){
+        print(typename this, '.do(', argv, ')');
+    };
+    const foo = noo(Foo,'hi','world');
+    assert foo;
+    assert foo inherits Foo;
+    assert 'Foo' === typename foo;
+    foo.do('something');
+    print('foo =',foo);
+}
+
+/**
+  We can also create classes as Objects, where we define
+  a constructor() method to act as the constructor for noo()
+  and add any member methods directly to the object.
+
+  Personally, i find this approach more aesthetically pleasing
+*/
+const Bar = {
+    __typename: 'Bar', // can't use nameof Bar here b/c Bar is still being evaluated!
+    prototype: undefined, // if you don't want to implicitly inherit Object!
+    constructor:proc(a,b){
+        print(__FLC, typename this, "constructor");
+        this.a = a;
+        this.b = b;
+    },
+    say: proc(){
+        print(typename this, '.say(', argv, ')');
+    },
+    noo:proc(){
+        argv.unshift(this);
+        return noo.apply(noo, argv);
+    }.importSymbols(nameof noo)
+};
+//Bar.noo = noo.createNooMethod(Bar);
+
+const Baz = {
+    __typename: 'Baz',
+    prototype: Bar,
+    //_parentClass: Bar, // see comments in constructor...
+    constructor:proc(a,b){
+        //if(0) this.prototype.prototype.constructor.apply(this,argv);
+        // Hmmm... this.prototype refers to Baz, thus we need
+        // to go two protos up to run the parent ctor. Alternately:
+        //else this._parentClass.constructor.apply(this,argv);
+        print(__FLC,"Calling super().");
+        super(a,b);
+        // or: super.apply(this, argv);
+        print(__FLC,"Called super().");
+        affirm this.a === a;
+        affirm this.b === b;
+    },
+    say: proc(){
+        print(typename this,'.say(',argv,') was overridden.');
+        return this;
+    }
+};
+//Baz.noo = noo.createNooMethod(Baz);
+
+if(1){
+    const bar = noo(Bar, 'hi', 'world');
+    assert bar;
+    assert 'Bar' === typename bar;
+    assert bar inherits Bar;
+    bar.say('hi');
+    print('bar =',bar);
+}
+
+if(1){
+    const baz = Baz.noo('yo','there');
+    assert baz;
+    assert 'Baz' === typename baz;
+    assert baz inherits Baz;
+    assert baz inherits Bar;
+    assert 'yo' === baz.a;
+    assert 'there' === baz.b;
+    assert baz === baz.say('yo');
+    print('baz =',baz);
+}

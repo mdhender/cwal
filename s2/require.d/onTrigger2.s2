@@ -1,0 +1,79 @@
+/**
+   An experimental event manager which superficially resembles
+   jQuery.on() and jQuery.trigger().
+
+   This one differs from onTrigger.s2 in that it does not modify the
+   bound object, but (because of that) the client needs to hold a copy
+   of the event manager.
+*/
+const $ = enum{$}.$;
+const proxy = {
+    prototype: null,
+
+    __typename: "OnTrigger2",
+
+    __new: proc(obj) using($){
+        this[$] = {prototype:null, o: obj, e:{}};
+    },
+    /**
+       Expects an event key and callback function, and queues that
+       callback to be called when trigger() is passed the same key.
+    */
+    on: proc(k,f) using($){
+        affirm typeinfo(iscallable f);
+        const e = this[$].e;
+        (e[k] ||| (e[k] = []))[] = f;
+        //return this;
+    },
+    /**
+       Triggers all callbacks for the given key, in an unspecified
+       order, passing them an event object and any arguments (after
+       the first) passed to this function. The event object is a plain
+       Object with this structure: {target: theBoundObject, type: k}.
+    */
+    trigger: proc(k) using($){
+        argv.shift();
+        const o = this[$].o, e = this[$].e;
+        foreach(@(e[k] ||| break)=>f){
+            f({target: o, type: k, prototype:null}, @argv);
+        }
+        //return this;
+    },
+    /**
+       If passed an argument, removes all handlers for that event key,
+       else it removes all handlers for all keys.
+     */
+    clear: proc(k) using($){
+        if(argv.#) delete this[$].e[k];
+        else this[$].e = {};
+    }
+};
+
+/**
+   Returns a proxy object with on() and trigger() methods for
+   mapping/triggering events on behalf of the given object.
+
+   If called multiple times with the same object, it will create a
+   new proxy with its own mappings.
+*/
+const mod = proc(obj) using{P:proxy}{
+    affirm typeinfo(iscontainer obj);
+    return new P(obj);
+};
+
+return mod;
+
+// Example usage:
+const my = {x: 0},
+      ot = mod(my);
+ot.on('hi', proc(){
+    print(__FLC,'on(hi) handler',argv);
+    ++argv.0.target.x;
+});
+ot.trigger('hi', 'there');
+affirm 1 === my.x;
+ot.trigger('nope', 1);
+affirm 1 === my.x;
+ot.trigger('hi', 'bye');
+affirm 2 === my.x;
+print(__FLC, 'done');

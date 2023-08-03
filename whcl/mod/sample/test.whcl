@@ -1,0 +1,19 @@
+/**
+    Script for testing sample_module.c.
+*/
+decl -const modSays eval -scope {
+    decl my [whcl.load-module 'sample.so']
+    echo __FLC "Loaded module:" $my
+    assert 42 == $my.the-answer
+    decl rc [my foo]
+    assert [info is-string $rc]
+    echo __FLC '[my foo] says:' $rc
+    if {false} {; # not necessary here, but for example's sake...
+        my destroy; # cleans up native immediately
+        my foo; # will throw a "'this' is-not-a MyModule" exception
+    }
+    eval $rc; # result of scope
+};
+
+echo __FLC 'Notice that the native was destroyed already.'
+echo __FLC 'Module said:' $modSays

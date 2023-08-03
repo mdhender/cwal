@@ -1,0 +1,99 @@
+/* Test code for newOp.s2. */
+requireS2(
+    ['newOp'],
+    proc(noo){
+        //affirm 0;
+
+        if(1){
+            const Foo = proc(a,b){
+                print(__FLC, typename this, "constructor");
+                this.a = a;
+                this.b = b;
+            };
+            Foo.__typename = 'Foo';
+
+            /**
+               In JS we would set methods on Foo.prototype, but in s2 that
+               would add them to the base-most Function prototype, so instead we
+               add them to Foo, which directly inherits from the prototype unction.
+            */
+            Foo.do = proc(){
+                print(typename this, '.do(', argv, ')');
+            };
+            const foo = noo(Foo,'hi','world');
+            affirm foo;
+            affirm foo inherits Foo;
+            affirm 'Foo' === typename foo;
+            foo.do('something');
+            print('foo =',foo);
+        }
+
+        /**
+           We can also create classes as Objects, where we define
+           a constructor() method to act as the constructor for noo()
+           and add any member methods directly to the object.
+
+           Personally, i find this approach more aesthetically pleasing
+        */
+        const Bar = {
+            __typename: 'Bar', // can't use nameof Bar here b/c Bar is still being evaluated!
+            prototype: undefined, // if you don't want to implicitly inherit Object!
+            constructor:proc(a,b){
+                print(__FLC, typename this, "constructor");
+                this.a = a;
+                this.b = b;
+            },
+            say: proc(){
+                print(typename this, '.say(', argv, ')');
+            },
+            new:proc(){
+                argv.unshift(this);
+                return noo.apply(noo, argv);
+            }using(noo)
+        };
+        //Bar.new = noo.createNooMethod(Bar);
+
+        const Baz = {
+            __typename: 'Baz',
+            prototype: Bar,
+            //_parentClass: Bar, // see comments in constructor...
+            constructor:proc(a,b){
+                //if(0) this.prototype.prototype.constructor.apply(this,argv);
+                // Hmmm... this.prototype refers to Baz, thus we need
+                // to go two protos up to run the parent ctor. Alternately:
+                //else this._parentClass.constructor.apply(this,argv);
+                print(__FLC,"Calling super().");
+                super(a,b);
+                print(__FLC,"Called super().");
+                affirm this.a === a;
+                affirm this.b === b;
+            },
+            say: proc(){
+                print(typename this,'.say(',argv,') was overridden.');
+                return this;
+            }
+        };
+        Baz.noo = noo.createNooMethod(Baz);
+
+        if(1){
+            const bar = noo(Bar, 'hi', 'world');
+            affirm bar;
+            affirm 'Bar' === typename bar;
+            affirm bar inherits Bar;
+            bar.say('hi');
+            print('bar =',bar);
+        }
+
+        if(Baz.noo){
+            const baz = Baz.noo('yo','there');
+            affirm baz;
+            affirm 'Baz' === typename baz;
+            affirm baz inherits Baz;
+            affirm baz inherits Bar;
+            affirm 'yo' === baz.a;
+            affirm 'there' === baz.b;
+            affirm baz === baz.say('yo');
+            print('baz =',baz);
+        }
+    }
+);

@@ -1,0 +1,4 @@
+MODULE.NAME := FILE
+MODULE.OBJ := mod_FILE.o
+MODULE.TESTS := mod_FILE.s2
+

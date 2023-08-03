@@ -1,0 +1,73 @@
+/**
+   Uses s2.loadModule() to load s2 loadable modules from DLLs. Usage:
+
+   dll!moduleName?options...
+
+   The return value: it returns whatever the C-level module
+   initialization code returned. In practice, that is normally
+   an object which contains the module's functionality. It may
+   also be a single function or any arbitrary value.
+
+   Options:
+
+   ACHTUNG: Be aware that caching will hold the first result from this
+   plugin's load() call (and generically _not_ caching DLL results is
+   dangerous), so any options provided to this function via a
+   require() call here are only honored on the first call (per DLL
+   name). On subsequent calls to load() the cached result will be
+   returned without checking the passed-in options (if any).
+
+   entryPoint=string: if set, it is used as the second param to
+   s2.loadModule(). This is only necessary when compiling multiple
+   modules into a single DLL. (Note, however, that the "requirement"
+   that we cache DLL loads means that this option will be ignored for
+   loads after the first ones, so it cannot currently be used to load
+   multiple modules via the same DLL.)
+
+   checkS2 (boolean): if set and s2[moduleName] is truthy, that value
+   is returned instead of performing a DLL lookup. This addresses the
+   convention that s2sh installs statically-built modules as
+   properties of the s2 object.
+*/
+affirm s2;
+affirm typeinfo(isfunction s2.loadModule);
+affirm typeinfo(isfunction s2.getenv);
+const mod = {
+    cacheIt: true /* _not_ caching DLL-loaded resources is a
+                     Really Bad Idea, as the DLL can change
+                     between invocations, leaving us with
+                     different binary signatures.
+                   */,
+    isVirtual: true /* so we can implement the [checkS2] option. */,
+    prefix: requireS2.pathFromEnv('S2_MODULE_PATH') ||| ['.'],
+    suffix: requireS2.pathFromEnv('S2_MODULE_EXTENSIONS') ||| ['.so','.dll'],
+    load: function(name,opt){
+        affirm name && typeinfo(isstring name);
+        const cacheKey = "dll!"+name;
+        if(const x = C#cacheKey) return x;
+        if(opt && opt.checkS2 && (const x = s2[name])) return x;
+        const pf = requireS2.pf;
+        pf.suffix = this.suffix;
+        pf.prefix = this.prefix;
+        const fn = pf.search(name) ||| 
+              throw "Cannot find DLL '%1$s' in search path %2$J with extensions %3$J.".
+              applyFormat(basename, pf.prefix, pf.suffix);
+        const a = [fn];
+        opt && opt.entryPoint && (a[]=opt.entryPoint);
+        const rc = L.apply(L, a);
+        affirm undefined !== rc;
+        return C.insert(cacheKey, rc);
+    } using {
+        L:s2.loadModule,
+        s2,
+        C: requireS2.modCache
+        /* We manually handle the cache because requireS2() bypasses
+           the cache if any options are set, and we don't want that
+           behaviour in this rare case. */
+    }
+};
+
+requireS2.home &&
+    mod.prefix.push( requireS2.home + s2.PathFinder.separator + 'dll'  );
+
+return mod;

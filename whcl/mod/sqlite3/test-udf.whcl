@@ -1,0 +1,74 @@
+########################################################################
+# UDF tests for the whcl sqlite3 module...
+decl -const S (whcl.sqlite3
+               || (([[whcl.install-api].index-of sqlite3]>=0)
+                   && [whcl.install-api sqlite3])
+               || [whcl.load-module 'sqlite3.so'])
+__debug {echo __FLC "S =" $S}
+affirm Stmt == [info type-name S.Stmt]
+decl -const db new S ":memory:"
+__debug {echo __FLC "db =" $db}
+
+db exec-multi <<<_SQL
+    create table t(a,b,c);
+    insert into t(a,b,c) values(1,2,3),(4,5,6);
+_SQL
+
+db create-udf print [proc {} {echo [argv join ' ']}]
+db exec "select print('hi',3-1,'you.')"
+db create-udf yo [proc {a b} {
+    if {2 == [argv length]} { return ($a + $b) }
+    return null
+}]
+affirm 7 == [db select-value 'select yo(3,4)']
+affirm null == [db select-value 'select yo(3)']
+decl -const store object {myVar 0}
+db create-udf hi [proc {v} {return [incr S.myVar $v]} using {S $store}]
+db exec "select hi(a) from t"
+affirm 5 == store.myVar
+
+affirm CWAL_RC_MISUSE == [[catch {db create-udf '' [proc {} {}]}].code-string]
+
+############################################################
+# Aggregate functions...
+db create-udf -aggregate summer [[proc agg {}{
+    affirm [info is-local aggregateFinal]
+    if {$aggregateFinal} {
+        decl rc agg.accum
+        set agg.accum 0
+        return $rc
+    }
+    foreach v $argv { incr agg.accum $v }
+}].with-this [proc {} {
+    set this.accum 0
+    set this.deterministic false
+}]]
+affirm 12 == [db select-value 'select summer(a,b) from t']
+
+decl x object i 0
+for {
+    decl stmt [[db prepare "select a from t where a>?"].bind 1 1]
+} {[stmt.step -bool]} {} {
+    set x.i [stmt get-column 0]
+}
+affirm 4 == x.i
+
+set x.i 0
+db create-udf boo [object {
+    aggregate true
+    step [proc {} {
+        incr x.i
+        affirm [info is-local aggregateFinal]
+        echo __FLC 'aggregate - final step?' $aggregateFinal $argv
+        expr ($aggregateFinal && [throw "Testing throw from 'final' UDF"])
+    } using {x $x}]
+}]
+
+affirm 0 == [[catch {
+    db exec "select boo(a,b) from t"
+}].message.index-of "Testing throw"]
+affirm 3 == x.i; # 2 rows plus the 'final' call
+unset x
+
+affirm WHX_RC_DB == [[catch {db prepare "select nosuchfunc()"}].code-string]
+

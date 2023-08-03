@@ -1,0 +1,103 @@
+/*
+  Another terbox experiment...
+*/
+const tb = s2.import('tb-bootstrap.s2');
+tb.width(true)/*init screen to keep inputMode() from segfaulting in libtermbox */;
+tb.inputMode(tb.inputMode.alt);
+tb.cursor(-1,-1);
+tb.outputMode(tb.outputMode.normal);
+
+tb.runPollLoop = proc callee( func, waitTime ){
+    var ev;
+    for( ; ev=0, ev = waitTime ? this.peek(waitTime) : this.poll(); ){
+        func(ev) === TB_LOOP.END && break;
+    }
+    return ev ? true : false;
+}.importSymbols({
+    TB_LOOP: enum {END}
+});
+
+
+
+var ex = catch {
+    var tbWidth = tb.width(true/*init screen!*/), tbHeight = tb.height();
+
+    affirm tbWidth>0;
+    affirm tbHeight>0;
+    const wFG = tb.color.black | tb.attr.bold,
+        wBG = tb.color.white
+    ;
+    const clear = proc(){return tb.clear(tb.color.yellow, tb.color.yellow)}.
+        importSymbols({tb: tb});
+    clear();
+
+    const statusMsg = proc(){
+        argv.unshift(0,0,wBG,wFG);
+        tb.clearLine(0,wBG,wFG).print5.apply(tb, argv);
+    };
+    
+    const keymap = {
+        113/*'q'*/: proc(){ return TB_LOOP.END }
+    };
+
+    proc checker(){
+        const fg = tb.color.white,
+        bg = tb.color.yellow,
+        fg2 = tb.color.yellow,
+        bg2 = tb.color.white;
+        const cols = 6, boxW = 2, boxH = 1,
+          xOff = 2, yOff = 3, boxChar = '·'.charAt(0,true);
+        var edgeL = xOff, edgeT = yOff;
+
+        const tbW = tb.width();
+        var row = 2, glyph = 42;
+        tb.outputMode(tb.outputMode.216);
+        tb.clear();
+        for(var hex = 0, c = 0; c < tbW; ++c, ++hex ){
+            tb.change(c, row, glyph, hex, 0);
+            tb.change(c, row+1, glyph, 0, hex);
+        }
+        statusMsg("That's mode 216. Tap a key.");
+        tb.present().poll();
+
+        tb.outputMode(tb.outputMode.256);
+        tb.clear();
+        row += 2;
+        for(var hex = 0, c = 0; c < tbW; ++c, ++hex ){
+            tb.change(c, row, glyph, hex, 0);
+            tb.change(c, row+1, glyph, 0, hex);
+        }
+        statusMsg("That's mode 256. Tap another key.");
+        tb.present().poll();
+
+        row += 2;
+        tb.outputMode(tb.outputMode.grayscale);
+        tb.clear();
+        for(var hex = 0, c = 0; c < tbW; ++c, ++hex ){
+            tb.change(c, row, glyph, hex, 0);
+            tb.change(c, row+1, glyph, 0, hex);
+        }
+        statusMsg("That's mode grayscale. Tap again.");
+        tb.present().poll();
+        tb.outputMode(tb.outputMode.normal);
+    }();
+
+    statusMsg("Tap 'q' to quit.");
+    tb.present().runPollLoop(proc(ev){
+        statusMsg(ev);
+        const cb = (keymap[ev.key] ||| keymap[ev.ch]),
+        rc = cb ? cb(ev) : 0;
+        cb || tb.present();
+        return rc ||| false;
+    }.importSymbols({
+        tb: tb,
+        keymap: keymap
+    }));
+};
+
+tb.clear().present().shutdown();
+ex && eval {
+    print(__FLC,"EXCEPTION:",ex);
+    throw ex; // wait until tb screen mode is done
+};
+print(__FLC,"Done");

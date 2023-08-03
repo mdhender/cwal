@@ -1,0 +1,145 @@
+/**
+   An alternative to foreach() which supports client-defined
+   iteration: iterate(Iterable,callback)
+
+   The I parameter must be an "iterable", which is any type supported
+   by foreach() or has the Iterable interface described below.
+
+   F must be a function or an array. If it's a function, it gets
+   called for each value iterated over, as described below. If it's
+   an array, each iterated-over value is appended to the array.
+
+   It has different default behaviours, compared to foreach(), for
+   most types:
+
+   Arrays and tuples: iterates over their list entries, calling
+   F(val) for each one.
+
+   Hashes: iterates over the hash entries, calling F(key,val)
+   for each one.
+
+   Enums: iterates over the enum entries, calling F(key,val.value) for
+   each. i.e. in contrast to foreach(), it passes on the underlying
+   wrapped value, not its enum-entry identity.
+
+   Anything else which is not a custom Iterable (see below): it uses
+   foreach() to iterate over each property, calling F(key,val) for
+   each one.
+
+   If F is an array, only the final argument to those would-be
+   callbacks is appended to the arrays. i.e. any "key" part of the
+   iteration is elided. Thus this approach can, objects/hashes/enums,
+   only be used to collect the values but not the keys. The array
+   approach is provided primarily for use with custom Iterables,
+   as those, by API design, iterate only over single values, not
+   key/value pairs.
+
+   If F() ever returns a literal false (as opposed to any other falsy
+   value) then iteration stops without an error (as is traditional in
+   s2 looping constructs).
+
+   Any value which supports the Iterable interface may participate in
+   iterate(): see the Iterable member of this function for that
+   documentation.
+
+   Results are undefined (might throw an exception) if, via F(),
+   cwal-level iteration rules are ignored. e.g. modification of the
+   being-iterated value during iteration may fail outright or (for
+   custom Iterables) produce unexpected results.
+
+   This function returns (for lack of a better option) itself, so
+   calls may be chained.
+
+   Reminder to self: this module must have no dependency on
+   require.s2, so that we can build it as a static module.
+*/
+const iterate = proc z(I,F){
+    affirm typeinfo(isderefable I);
+    affirm typeinfo(isfunction F) || typeinfo(isarray F);
+    const f = typeinfo(isarray F)
+          ? proc(){$[]=argv[argv.#-1]}using{$:F}
+          : F;
+    if(const e = z.isaIterable(I)){
+        I.iterBegin();
+        while(e !== const _ = I.iterNext()) f(_)===false && break;
+        typeinfo(isfunction I.iterFinalize) && I.iterFinalize();
+        return z;
+    }
+    if(typeinfo(islist I)) foreach(@I=>v) f(v)===false&&break;
+    else if(typeinfo(ishash I)) foreach(#I=>k,v) f(k,v)===false&&break;
+    else if(typeinfo(isenum I)) foreach(I=>k,v) f(k,v.value)===false&&break;
+    else foreach(I=>k,v) f(k,v)===false&&break;
+    return z;
+};
+
+/**
+   A generic end iterator. See iterate.Iterable.iterEnd for the docs.
+*/
+iterate.iterEnd = enum{e}.e;
+
+/**
+   The base Iterable interface.
+
+   The iteration process first calls iterBegin() to allow the iterable
+   to initialize/reset (if possible) its iteration. Then it loops over
+   calls to iterNext(), ending when iterNext() returns iterEnd or when
+   F(iteratedValue) returns a literal false (which signals the loop to
+   stop without an error, as is traditional in s2 loop constructs). If
+   the iterable has an iterFinalize() method then it is called if
+   looping ends without propagating an exception.
+
+   An Iterable which cannot be traversed multiple times must either,
+   depending on the situation, simply do nothing or throw an error on
+   subsequent traversals.
+*/
+iterate.Iterable = {
+    /**
+       iterBegin() initializes the iteration process. Its result
+       is ignored - it must throw on error.
+    */
+    iterBegin: proc(){},
+
+    /**
+       iterNext() returns the next iterable value or this.iterEnd at/after
+       the end of the set.
+    */
+    iterNext: proc(){return this.iterEnd},
+
+    /**
+       iterEnd must be any distinct value which is guaranteed never to
+       strictly compare === to _any_ other value in an iteration
+       context, yet must be "truthy" in a boolean context. The end of
+       iteration is signaled by returning this value from
+       iterNext(). An empty {} or [] will do as an iterEnd value, but
+       anonymous enums are a fancier (and cheap) way to get a unique
+       value. The undefined value is expressly forbidden for use as
+       iterEnd's value. It is legal for multiple Iterables to share
+       the same iterEnd value, so long as that value has no chance of
+       actually being an intended, non-end iterable result. This
+       member must never be modified.
+    */
+    iterEnd: iterate.iterEnd,
+
+    /**
+       Optional: intended to free up any resources, finalize a db
+       statement handle, etc. It gets called only if iteration
+       completes without throwing an exception or fatal error.
+    */
+    iterFinalize: undefined
+};
+
+/**
+   If I implements the Iterable interface (for purposes of iterate())
+   then this function returns I.iterEnd, else it returns false.
+*/
+iterate.isaIterable = proc(I){
+    return
+    (typeinfo(isderefable I)
+     && !typeinfo(isenum I)
+     && typeinfo(isfunction I.iterNext)
+     && const e = typeinfo(isfunction I.iterBegin) ? I.iterEnd : undefined)
+        ? e : false;
+};
+assert(iterate.isaIterable(iterate.Iterable));
+
+iterate;

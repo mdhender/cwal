@@ -1,0 +1,100 @@
+decl -const M [whcl install-api math]
+/*
+  To be honest, i don't know what most of these functions do.  Math
+  beyond multiplication is above my pay grade.
+*/
+decl -const fDD array (
+    acos
+    asin
+    atan
+    ceil
+    cos
+    cosh
+    exp
+    fabs
+    floor
+    log
+    log10
+    sin
+    sinh
+    sqrt
+    tanh
+)
+decl -const fDDD array (
+    atan2
+    fmod
+    pow
+)
+decl -const fMisc array (
+    frexp
+    isnan
+    isinf
+    ldexp
+    modf
+)
+
+decl -const vals array PI
+
+if {true} {
+#    echo -n "Funcs with signature [double F(double)]:\n\t"
+    foreach v $fDD {
+#        echo -n ' ' $v
+        assert [info is-function M[$v]]
+    }
+
+#    echo -n "\n\nFuncs with signature [double F(double, double)]:\n\t"
+    foreach v $fDDD {
+#        echo -n ' ' $v
+        assert [info is-function M[$v]]
+    }
+
+#    echo -n "\n\nMisc. funcs:\n\t"
+    foreach v $fMisc {
+#        echo -n ' ' $v
+        assert [info is-function M[$v]]
+    }
+
+#    echo -n "\n\nConstants:\n\t"
+    foreach v $vals {
+#        echo -n ' ' $v '=' M[$v]
+        assert [info is-double M[$v]]
+    }
+#    echo
+}
+
+# Returns true if x is approximately equal to y.
+proc approx {x y {z 0.01}} {
+    return ($x > $y - $z && $x < $y + $z)
+}
+
+# Various tests...
+/**
+ TODO:
+
+ http://www.cplusplus.com/reference/cmath/
+
+ has demos of all of these functions, including inputs and
+ outputs. Let's go rip off some of those.
+*/
+assert {approx M.PI 3.1415}
+assert {M isnan [M.sqrt -1]}
+assert {expr ![M isnan [M.sqrt 1]]}
+assert {
+    decl t [M modf 3.15];
+    expr 3 == t[0] && [approx t[1] 0.15]
+}
+assert {expr [M.pow 2 3] == 8.0};
+assert {
+    decl t [M frexp 3.2]
+    expr 2 == t[0] && [approx t.1 0.8]
+}
+assert {
+    decl t [M frexp 1024]
+    expr 11 == t.0 && [approx t.1 0.5]
+}
+assert {
+    decl t [M.frexp 8]
+    expr 4 == t.0 && [approx t.1 0.5]
+}
+assert {expr 3.0 == [M.ceil 2.8]}
+assert {expr 2.0 == [M.floor 2.8]}

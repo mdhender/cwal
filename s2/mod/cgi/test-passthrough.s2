@@ -1,0 +1,28 @@
+const ob = s2.ob;
+const pushExtra = 1;
+const origOBLevel = ob.level();
+pushExtra && ob.push();
+
+const cgi = (s2.cgi ||| s2.loadModule('cgi.so')).init({
+    //pushOb: false/*default=true*/,
+    //importEnv: true/*default=false*/
+});
+affirm cgi;
+affirm ob.level() === (origOBLevel + 1 + (pushExtra ? 1 : 0));
+
+cgi.setContentType("text/plain");
+cgi.httpStatus(837,"Optional comment");
+const Headers = enum {
+    XLastGrognified: "X-Last-Grognified"
+};
+cgi.setHeader(Headers.XLastGrognified, cgi.headerTimestamp());
+const bodyText = "This is the body.\n";
+cgi << bodyText;
+
+affirm ob.level() === (origOBLevel + 1 + (pushExtra ? 1 : 0));
+const doExit = 1;
+cgi.respondPassthrough(__FILE,doExit);
+doExit && throw "Never reached because cgi.respondPassthrough() exits.";
+affirm ob.level() === (origOBLevel + (pushExtra ? 1 : 0));
+while(ob.level()) ob.pop();
+print(__FLC,"Done!");

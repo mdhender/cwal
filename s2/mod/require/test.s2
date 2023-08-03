@@ -1,0 +1,12 @@
+const R = s2.require ||| s2.loadModule('require.so');
+print(__FLC,R);
+affirm typeinfo(iscallable R.require);
+affirm typeinfo(iscallable R);
+R(['r-1'],proc(mod){
+    affirm 1 === mod.blah;
+    ++mod.blah;
+});
+
+R(['r-1'],proc(mod){
+    affirm 2 === mod.blah;
+});

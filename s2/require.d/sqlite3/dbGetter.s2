@@ -1,0 +1,53 @@
+/**
+    Returns a function which, when called, returns an sqlite3 db
+    handle. That handle gets opened the first time the function is
+    called and cached for future calls. The config object must
+    contain:
+
+    dbFile: path to db file
+
+    It throws if config.dbFile is not a string.
+
+    Optionally:
+
+    dbOpenFlags: 'r' for read-only mode or 'w' for
+    read/write. (Defaults to 'w'.)
+
+    dbOnOpen: a function to run when the db is opened. The db will be
+    the 'this' of the call. It may optionally be an SQL string, in
+    which case it gets passed through the db's execMulti() function.
+
+    Example usage:
+
+    myApp.dbConfig = {
+      dbFile: __FILEDIR+'db/mydb.sqlite3',
+      dbOpenFlags: 'w',
+      dbOnOpen: proc(){
+        this.busyTimeout(5000).createUDF(...).exec(...);
+      }
+    };
+
+    s2.require(['sqlite3/dbGetter'], proc(G) using(myApp){
+      myApp.db = G(myApp.dbConfig);
+    });
+
+    myApp.db().exec("drop table if exists foo");
+*/
+return requireS2(['sqlite3/s2.sqlite3'], proc(sqlite3){
+    return proc createAppDbGetter(config){
+        affirm typeinfo(isobject config);
+        affirm typeinfo(isstring config.dbFile);
+        return proc x(){
+            x.$ && return x.$;
+            x.$ = S.open(c.dbFile, c.dbOpenFlags ||| "w");
+            if(const o = c.dbOnOpen){
+                if(typeinfo(isfunction o)) o.call(x.$);
+                else if(typeinfo(isstring o)) c.execMulti(o);
+            }
+            return x.$;
+        }using{
+            S,
+            c: config
+        };
+    } using { S: sqlite3 };
+});

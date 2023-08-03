@@ -1,0 +1,9 @@
+affirm 'function' === typename s2.fork /* not necessarily compiled in */;
+var rc = s2.fork(0 ? true : false, proc(){
+    for(var x = 0; x < 5; ++x ){
+        print(__FLC,"child!");
+        s2.time.mssleep(250);
+    }
+    return true;
+});
+print(__FLC,'fork rc=',rc);

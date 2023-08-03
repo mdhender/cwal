@@ -1,0 +1,116 @@
+whcl install-api Script
+
+eval -scope {
+    decl i 0
+    decl s new whcl.Script __FLC {{{:
+        #echo __FLC i $i
+        incr i
+    }}}
+    s run; assert 1 == $i
+    eval -> $s; assert 2 == $i
+    eval -scope -> $s; assert 3 == $i
+    s run; assert 4 == $i
+    s run; assert 5 == $i
+}
+
+eval -scope {
+    decl s new whcl.Script __FLC {{{:
+        #echo __FLC
+        decl i 0
+    }}}
+    assert ![info is-local i]
+    s run
+    assert ![info is-local i]
+    eval -> $s
+    assert [info is-local i]
+    s run ; # okay: call-local duplicate decl, but the next eval
+            # will fail because i is already declared...
+    assert CWAL_RC_ALREADY_EXISTS == [[catch -noscope {eval -> $s}].code-string]
+}
+
+eval -scope {
+    decl s new whcl.Script __FLC {{{:
+        decl i 0
+    }}}
+    assert [info is-local s]
+    eval -> $s
+    assert [info is-local i]
+
+    decl o [s to-jsonable]
+    assert 'decl i 0' == [o.script.trim]
+    assert [info is-string o.name]
+}
+
+eval -scope {
+    # This behaviour is not currently guaranteed by the API.  This is
+    # just me trying it out to see what happens.  This basic test
+    # (currently) works but it's easy to imagining that recursive
+    # cases with more complex contents can get the engine out of
+    # whack. Until/unless that's proven otherwise, evaling a Script
+    # while that script is being eval'd officially has Undefined
+    # Behavior.
+    decl i 1
+    decl s new whcl.Script __FLC {{{:
+        if {[incr i] < 5} {
+            eval -> $s
+        }
+    }}}
+    s run
+    assert 5 == $i
+}
+
+
+if {true} {
+    decl i 0
+    decl s new whcl.Script {{{:
+        assert undefined == this
+        incr i
+    }}}
+    s run
+    eval -> $s
+    assert 2 == $i
+}
+
+
+if {true} {; # test line/column methods
+    decl s new whcl.Script {}
+    assert 1 == [s line]
+    assert 0 == [s column]
+
+    assert $s == [s line 10]
+    assert 10 == [s line]
+    assert 0 == [s column]
+
+    assert $s == [s line 1 20]
+    assert 1 == [s line]
+    assert 20 == [s column]
+
+    s line 20 1
+    assert 20 == [s line]
+    assert 1 == [s column]
+
+    s line 2
+    assert 2 == [s line]
+    assert 1 == [s column]
+
+    assert $s == [s column 3]
+    assert 2 == [s line]
+    assert 3 == [s column]
+
+    assert $s == [s column 1 10]
+    assert 10 == [s line]
+    assert 1 == [s column]
+}
+
+if {true} {; #ensure that eval of a Script retains scope flags...
+    decl s new whcl.Script __FLC "break 1"
+    decl x while {true} {eval -> $s}
+    assert 1 == $x
+    assert 1 == [while {true} {eval -scope -> $s}]
+    assert CWAL_SCR_SYNTAX == [[catch {
+        while {true} {
+            decl s new whcl.Script __FLC "break 1"
+            s.run
+        }
+    }].code-string]
+}

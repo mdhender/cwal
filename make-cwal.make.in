@@ -1,0 +1,189 @@
+#!/hey/emacs/this/is/make
+#
+# This is the main makefile for src/. It is intended to be included
+# from/via the main GNUmakefile.
+build-cwal:
+ifeq (1,$(MAKING_CLEAN))
+cwal-only:
+else
+cwal-only: build-cwal
+all: build-cwal
+# ^^^^ maintenance reminder: this target cannot be named 'libcwal' or
+# 'cwal' because it then causes, e.g., the amalgamation build
+# (libcwal.[ch]) to try to compile to a binary named libcwal.
+endif
+$(call ShakeNMake.CALL.CLEAN-SET,cwal)
+clean-root: clean-cwal
+distclean-root: distclean-cwal
+
+CWAL.VERSION = "???"# might be defined below
+CWAL.CPPFLAGS := $(CPPFLAGS) $(PROJECT_INCLUDES)
+CWAL.CFLAGS = $(CFLAGS)
+CWAL.CXXFLAGS = $(CXXFLAGS)
+$(DIR.src)/cwal.o: CPPFLAGS+=-DCWAL_VERSION_STRING='$(CWAL.VERSION)' \
+  -DCWAL_CPPFLAGS='"$(CWAL.CPPFLAGS)"' \
+  -DCWAL_CFLAGS='"$(CWAL.CFLAGS)"' \
+  -DCWAL_CXXFLAGS='"$(CWAL.CXXFLAGS)"'
+libcwal.OBJECTS := $(addprefix $(DIR.src)/,\
+	cwal.o \
+	cwal_utf.o \
+	cwal_json.o \
+	cwal_printf.o \
+	cwal_format.o \
+	JSON_parser/JSON_parser.o)
+CLEAN.cwal += $(libcwal.OBJECTS)
+$(libcwal.OBJECTS): CPPFLAGS+=$(CWAL.CPPFLAGS)
+
+########################################################################
+# DLL...
+ifeq (1,$(CWAL_BUILD_SHARED_LIBS))
+$(call ShakeNMake.CALL.RULES.DLLS,libcwal)
+libcwal.DLL.OBJECTS := $(libcwal.OBJECTS)
+$(libcwal.DLL): $(libcwal.OBJECTS)
+libcwal.thelib := $(libcwal.DLL)
+build-cwal: $(libcwal.DLL)
+CLEAN.cwal += $(libcwal.DLL)
+else
+########################################################################
+# Static lib...
+libcwal.LIB.OBJECTS := $(libcwal.OBJECTS)
+$(call ShakeNMake.CALL.RULES.LIBS,libcwal)
+$(libcwal.LIB): $(libcwal.OBJECTS)
+libcwal.thelib := $(libcwal.LIB)
+build-cwal: $(libcwal.LIB)
+CLEAN.cwal += $(libcwal.LIB)
+endif
+
+########################################################################
+# Test binaries...
+src/test.BIN.OBJECTS := $(DIR.src)/test.o
+src/sanity.BIN.OBJECTS := $(DIR.src)/sanity.o
+src/test.BIN.LDFLAGS := -L$(DIR.top) -lcwal
+src/sanity.BIN.LDFLAGS = $(src/test.BIN.LDFLAGS)
+$(call ShakeNMake.CALL.RULES.BINS,src/test src/sanity)
+ifeq (1,$(CWAL_BUILD_SHARED_LIBS))
+    $(src/test.BIN): $(libcwal.DLL)
+    $(src/sanity.BIN): $(libcwal.DLL)
+    $(shell rm -f $(libcwal.LIB))
+else
+    $(src/test.BIN): $(libcwal.LIB)
+    $(src/sanity.BIN): $(libcwal.LIB)
+    $(shell rm -f $(libcwal.DLL))
+endif
+build-cwal: $(src/test.BIN) $(src/sanity.BIN)
+CLEAN.cwal += $(src/test.BIN) $(src/sanity.BIN) $(src/test.BIN.OBJECTS) $(src/sanity.BIN.OBJECTS)
+$(src/test.BIN.OBJECTS) $(src/sanity.BIN.OBJECTS): CPPFLAGS+=$(CWAL.CPPFLAGS)
+
+########################################################################
+# Build information (gets baked into the sources).
+ifneq (,$(BIN.FOSSIL))
+  CWAL.UUID := $(shell $(BIN.FOSSIL) info | awk '/^checkout:/{print $$2, $$3, $$4}')
+ifneq (,$(CWAL.UUID))
+  CWAL.VERSION := "cwal $(CWAL.UUID) built $(shell date -u '+%Y-%m-%d %H:%M')"
+  CWAL.VERSION.FROM.FOSSIL := 1
+#$(error CWAL.VERSION=$(CWAL.VERSION))
+endif
+#^^^^ /CWAL.UUID
+endif
+#^^^^ /BIN.FOSSIL
+# End build info
+########################################################################
+
+########################################################################
+# Start "amalgamation build"...
+libcwal.h := libcwal.h
+libcwal.c := libcwal.c
+
+libcwal.h.SRC := \
+	$(addprefix $(DIR.inccwal)/,\
+		cwal_config.h \
+		cwal.h \
+		cwal_printf.h \
+	)
+
+libcwal.c.SRC := $(addprefix $(DIR.src)/,\
+	cwal_internal.h \
+    cwal.c \
+    cwal_format.c \
+    JSON_parser/JSON_parser.h \
+    cwal_json.c \
+    cwal_printf.c \
+    cwal_utf.c \
+    JSON_parser/JSON_parser.c)
+
+$(eval $(call ADD_C_DEPS,cwal,\
+	$(sort \
+	$(libcwal.c.SRC)\
+	$(wildcard $(DIR.include)/wh/libcwal.h)\
+	$(wildcard $(DIR.include)/wh/cwal/*.h)\
+	$(wildcard $(DIR.src)/*.c)\
+    )\
+))
+DEPS.cwal.INCDIRS := $(DIR.src)/JSON_parser
+$(libcwal.thelib): $(DEPS.cwal.make)
+build-cwal: deps-cwal
+
+CWAL.AMAL_MAKEFILE_DEPS := $(filter-out $(ShakeNMake.CISH_DEPS_FILE),$(MAKEFILE_LIST))
+$(CWAL.AMAL_MAKEFILE_DEPS):
+$(libcwal.h.SRC):
+$(libcwal.c.SRC):
+$(libcwal.h): $(libcwal.h.SRC) $(CWAL.AMAL_MAKEFILE_DEPS)
+	@echo "Creating $@..."
+	@{ \
+		echo '#if !defined(WANDERINGHORSE_NET_CWAL_AMALGAMATION_H_INCLUDED)'; \
+		echo '#define WANDERINGHORSE_NET_CWAL_AMALGAMATION_H_INCLUDED'; \
+		echo '#if !defined(CWAL_AMALGAMATION_BUILD)'; \
+		echo '#  define CWAL_AMALGAMATION_BUILD'; \
+		echo '#endif'; \
+		test x1 = x$(CWAL.VERSION.FROM.FOSSIL) && { \
+			echo '#if !defined(CWAL_VERSION_STRING)'; \
+			echo '#  define CWAL_VERSION_STRING $(CWAL.VERSION)'; \
+			echo '#endif'; \
+		}; \
+		echo "#if defined(__cplusplus) && !defined(__STDC_FORMAT_MACROS) /* required for PRIi32 and friends.*/"; \
+		echo "#  define __STDC_FORMAT_MACROS"; \
+		echo "#endif"; \
+		echo '#if !defined(CWAL_CPPFLAGS)'; \
+		echo '#  define CWAL_CPPFLAGS "$(CWAL.CPPFLAGS)"'; \
+		echo '#endif'; \
+		echo '#if !defined(CWAL_CFLAGS)'; \
+		echo '#  define CWAL_CFLAGS "$(CWAL.CFLAGS)"'; \
+		echo '#endif'; \
+		echo '#if !defined(CWAL_CXXFLAGS)'; \
+		echo '#  define CWAL_CXXFLAGS "$(CWAL.CXXFLAGS)"'; \
+		echo '#endif'; \
+		for i in $(libcwal.h.SRC); do \
+			echo "/* start of file $$i */"; \
+			cat $$i; \
+			echo "/* end of file $$i */"; \
+		done; \
+		echo '#endif/*!defined(WANDERINGHORSE_NET_CWAL_AMALGAMATION_H_INCLUDED)*/'; \
+} | sed -e '/[ ]*#[ ]*include[ ]*.*cwal.*\.h[">]/d' > $@
+
+$(libcwal.c):  $(libcwal.h) $(libcwal.c.SRC) $(CWAL.AMAL_MAKEFILE_DEPS)
+	@echo "Creating $@..."
+	@{ \
+		echo '#include "$(libcwal.h)"'; \
+		echo '#include "string.h" /*memset()*/'; \
+		echo '#include "assert.h"'; \
+	} > $@
+	@{ \
+		for i in $(libcwal.c.SRC); do \
+			echo "/* start of file $$i */"; \
+			cat $$i; \
+			echo "/* end of file $$i */"; \
+		done; \
+	} | sed \
+		-e '/[ ]*#[ ]*include[ ]*.*cwal.*\.h.*[">]/d' \
+		-e '/[ ]*#[ ]*include[ ]*.*JSON_pa.*\.h.*[">]/d' \
+		>> $@
+CLEAN.cwal += $(libcwal.c) $(libcwal.h)
+
+libcwal.o = $(subst .c,.o,$(libcwal.c))
+$(libcwal.o): $(libcwal.c)
+$(libcwal.o): CPPFLAGS:=$(filter-out -DHAVE_AUTOCONFIG_H,$(CPPFLAGS))
+$(libcwal.o): CPPFLAGS+=-I.
+amal-cwal: $(libcwal.o)
+amal: amal-cwal
+# end amalgamation build
+########################################################################

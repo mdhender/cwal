@@ -1,0 +1,19 @@
+<? /* Starts a "normal" code block. Such blocks get
+      output verbatim into the generated document. */
+ var msg = 'this is a demo of tmpl: s2 embedded in text docs';
+ var x = 10, y = 12;
+
+ const myfunc = proc(){
+    //throw __FLC;
+    return argv.join(' ==> ')
+ };
+?>Hi, world! Our message to you is:
+<% /* This tag wraps its contents in an eval and output call,
+      such that what gets output is the evaluated result of
+      this block's body. */
+  msg %>
+
+x=<%x%>, y=<%y%>, x+y = <% x+y %>!
+The s2.tmpl() function: <%s2.tmpl%>
+A list of numbers: <% myfunc(1,2,3) %>
+The function which generated that output: <% myfunc %>

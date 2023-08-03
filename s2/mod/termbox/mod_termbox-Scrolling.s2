@@ -1,0 +1,146 @@
+/*
+  Experimenting with a higher-level Window class for
+  termbox. It is not yet functional - just checking the
+  shape of the API.
+*/
+const tb = s2.loadModule2('termbox').termbox;
+tb.defaultAttr = {
+    fg: 0, //tb.color.white,
+    bg: 0 //tb.color.black
+};
+const print = proc f(){
+    affirm f.target;
+    f.y || (f.y = 0);
+    if(f.y===f.target.height()){
+        f.y = 0;
+        f.target.clear();
+    }
+    argv.unshift(0, f.y++, -1, -1);
+    f.target.print5.apply(f.target,argv);
+    return tb;
+}.importSymbols(nameof tb);
+//tb.outputMode(tb.outputMode.normal);
+//tb.init();
+//tb.clear(tb.defaultAttr.fg, tb.defaultAttr.bg);
+
+var ex = catch {
+    var tWidth = tb.width(true/*init screen!*/), tHeight = tb.height();
+    tb.clear(tb.color.white, tb.color.black);
+    const wFG = tb.color.white | tb.attr.bold,
+        wBG = tb.color.red | tb.attr.reverse
+    ;
+
+
+    var w = tb.newWindow(tWidth/2, tHeight/2);
+    var wW = w.width(), wH = w.height();
+    affirm 'Window' === typename w;
+    w.defaultAttr(wFG, wBG).clear();
+
+    if(1){
+        var sub = w.newSubwin(wW/3, wH/2, 5, wH/2-1);
+        sub.defaultAttr(tb.color.green | tb.attr.reverse, tb.color.black).
+            clear().
+            print5(0, 0, -1, -1, "Subwindow.");
+    }
+
+
+    //if(1){
+        // multiple top-level windows.
+    var otherWindow = tb.newWindow(tWidth-w.width()+3, wH, wW/3, 2, 1);
+    otherWindow.
+        defaultAttr(tb.color.yellow|tb.attr.bold,
+                    tb.color.red).
+        clear().
+        //boxIn(1).
+        print5(0,1,-1, -1, "another top-level window. ",
+               "Tap arrow keys to pseudo-scroll the other window's ",
+               "TbPad a bit, HOME to reset its position, ",
+               "'t' to toggle this window, and 'q' to quit.").
+        reverseAttr().//reverseAttr().
+        present();
+    //tb.present();
+    //}
+    //tb.present().poll();
+
+
+    var pad = tb.newPad(tWidth*2, tHeight*2);
+    pad.defaultAttr(tb.color.white | tb.attr.bold,
+                    tb.color.blue).
+        clear();
+    print.target = pad;
+
+    print("Terminal size:",tWidth,'x',tHeight);
+    print('window:', w, ', parent:', w.parent());
+    print('size = ' , w.size(), ', pos = ',w.pos());
+    print("Other window:",otherWindow," ", otherWindow.size());
+
+    print("Tap arrow keys to pseudo-scroll this TbPad a bit. Tap 'q' to quit.");
+
+    var sX = 0, sY = 0,
+    kUp = tb.keys.search('ARROW_UP'),
+    kDown = tb.keys.search('ARROW_DOWN'),
+    kLeft = tb.keys.search('ARROW_LEFT'),
+    kRight = tb.keys.search('ARROW_RIGHT'),
+    kHome =  tb.keys.search('HOME'),
+    kPgUp =  tb.keys.search('PGUP'),
+    kPgDn =  tb.keys.search('PGDN'),
+    kT = 116,
+    pgSize = 5,
+    kQuit = 113 /* 'q' */
+    ;
+    var ev, key, doDraw = 1, posFmt = "scroll x=%1$03d, y=%2$03d   "//" \b\b\b\b"
+    // lol (or not): \b characters move RHS chars to move left. Hmmm.
+    ;
+    otherWindow._isShown = true;
+    do{
+        //if(sY<0) sY = 0;
+        //else if(sY>=wH) sY = wH-1;
+        //if(sX<0) sX = 0;
+        //else if(sX>=wW) sX = wW-1;
+        if(doDraw){
+            w.clear();
+            //print("x=",sX,", y=",sY);
+            otherWindow.print5(0,0, -1, -1,
+                               posFmt.applyFormat(sX, sY));
+            pad.drawTo( w, 0, 0, sX, sY );
+            //w.present();
+            tb.present();
+        }
+        ev = tb./*present().*/poll();
+        if(kQuit===ev.ch /*'q'*/) break;
+        else if(kT===ev.ch /*'t'*/){
+            doDraw = 1;
+            if(1){
+                otherWindow.posZ( -otherWindow.posZ() );
+            }else{
+                // isn't quite working properly (not clearing screen properly)
+                //otherWindow.show( otherWindow._isShown = !otherWindow._isShown);
+                otherWindow.toggle();
+                //w.toggle();
+            }
+            print(otherWindow.pos());
+            continue;
+        }else if(key = ev.key){
+            doDraw = 1;
+            kUp===key && (--sY, continue);
+            kDown===key && (++sY, continue);
+            kLeft===key && (--sX, continue);
+            kRight===key && (++sX, continue);
+            kHome===key && (sX=sY=0, continue);
+            kPgDn===key && (sY+=pgSize, continue);
+            kPgUp===key && (sY-=pgSize, continue);
+        }
+        doDraw = 0;
+    }while(true);
+    //w.present();
+    //tb.present().poll();
+    //print("Tap a key to quit.");
+    //w.present();
+    //tb.present().poll();
+
+    //tb.poll();
+    //tb.shutdown();
+};
+tb.mainWin && tb.mainWin.close();
+//tb.shutdown(); // happens when last top-level Window goes.
+ex && throw ex; // wait until tb screen mode is done

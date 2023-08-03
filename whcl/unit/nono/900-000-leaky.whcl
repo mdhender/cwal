@@ -1,0 +1,23 @@
+# This script leaks buffer memory by stranding it in unreachable
+# cyclic values. Until/unless a reliable recursive vacuum algo can be
+# found, this script represents a "gc deathtrap" for cwal.
+decl a object
+decl b array $a
+set a[$a] a
+for {decl x 0} {$x < 25} {incr x} {
+    decl c object a $a b $b
+    set a.c $c
+    set b.1 $c
+    for {decl y 0} {$y < 25} {incr y} {
+        # ^^^^^ we keep the max $x/$y low only for the sake of keeping
+        # the unit tests running quickly. Increasing both to 100 is a
+        # better demonstration but is relatively slow.
+        decl d new whcl.Buffer 1000
+        set b.d $d
+        set a.d $d
+        set d.a $a
+        set d.b $b
+        set d.c $c
+        set d.d $d
+    }
+}

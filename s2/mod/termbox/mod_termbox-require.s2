@@ -1,0 +1,18 @@
+const R = s2.import2('require.d/require.s2');
+R([
+    'termbox/module'
+    //'dll!termbox'
+], function( tb ){
+    var win = new tb.Window();
+    win.defaultAttr( tb.color.green | tb.attr.bold, tb.color.cyan );
+    win.print3(0, 0, "Window initialized via require().\n",
+               "Screen state will be restored ",
+               "when the last top-level window goes.");
+    win.print5(0, win.height()-1, tb.color.yellow | tb.attr.bold, tb.color.blue,
+               "Tap a key or resize the window to continue.")
+        .present();
+    //tb.present();
+    var event = tb.poll();
+    win.close() /* if all goes well, the screen state is restored now */;
+    print("Final event:",event);
+});

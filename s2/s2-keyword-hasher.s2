@@ -1,0 +1,422 @@
+/**
+   This script generates hash values for keywords and typeinfo/pragma
+   tags. The idea is that we invent a hashing algorithm which produces
+   collision-free results for these data sets, generate the
+   switch/case lookup code for them here, and copy/paste that into the
+   relevant places in the C code (eval.c). The C side implements
+   the same algorithm to apply to user input. This makes lookup of
+   these types of keys O(1), requiring only a hash generation and, on
+   a hash match, string comparison.
+
+   If passed no flags it generates All The Output, which must be
+   picked apart and pasted into the relevant C code. It accepts
+   flags to limit its output to the given type(s):
+
+   --typeinfo
+   --pragma
+   --buildopt
+   --keyword
+   --rc
+
+   This app throws if a hash collision is detected within a given data
+   set, in which case the potential remedies are:
+
+   1) Tweak the hash algo until it produces no collisions. This change
+   needs to be applied in this file and in
+   eval.c::s2_keyword_perfect_hash(), and then all uses of the hash
+   must be regenerated from this script and re-integrated into C.
+
+   2) Break the offending list into multiple lists and multiple C-side
+   lookup routines.
+
+   3) Rename one of the offending keys.
+
+   Reminder to self: when generating code for use in the s2 core, s2
+   MUST be built with 64-bit integers or we risk creating mismatched
+   hashes compared to the C version.
+*/
+const opt = (s2.ARGV ? s2.ARGV.flags : 0) ||| {prototype:null};
+const gotOpt = opt.typeinfo || opt.pragma || opt.keyword || opt.rc || opt.buildopt;
+
+const kw = {
+    prototype: undefined,
+    /* Description of where to paste this output to. */
+    cfunc: "s2_eval.c::s2_ptoken_keyword()",
+    list:[
+        /*keywords format:
+          [# 0 (hash code placeholder), "TheKeyword", "name of s2_eval.c::S2_KWDS.MEMBER"] */
+        [#0, "__BREAKPOINT", "_breakpoint"],
+        [#0, "__COLUMN", "_col"],
+        [#0, "__FILE", "_file"],
+        [#0, "__FILEDIR", "_filedir"],
+        [#0, "__FLC", "_flc"],
+        [#0, "__LINE", "_line"],
+        [#0, "affirm", "affirm"],
+        [#0, "assert", "assert_"],
+        [#0, "break", "break_"],
+        [#0, "catch", "catch_"],
+        [#0, "class", "class_"],
+        [#0, "const", "const_"],
+        [#0, "continue", "continue_"],
+        [#0, "define", "define"],
+        [#0, "defined", "defined_"],
+        [#0, "delete", "delete_"],
+        [#0, "do", "doWhile"],
+        [#0, "echo", "echo"],
+        [#0, "enum", "enum_"],
+        [#0, "eval", "eval"],
+        [#0, "exception", "exception_"],
+        [#0, "exit", "exit_"],
+        [#0, "false", "false_"],
+        [#0, "fatal", "fatal_"],
+        [#0, "for", "for_"],
+        [#0, "foreach", "foreach_"],
+        [#0, "function", "function_"],
+        [#0, "if", "if_"],
+        [#0, "import", "import"],
+        [#0, "include", "include"],
+        [#0, "inherits", "inherits"],
+        [#0, "interface", "interface_"],
+        [#0, "is", "is_"],
+        [#0, "isa", "isa_"],
+        [#0, "nameof", "nameof"],
+        [#0, "new", "new_"],
+        [#0, "null", "null_"],
+        [#0, "pragma", "pragma"],
+        [#0, "private", "private_"],
+        [#0, "proc", "proc_"],
+        [#0, "protected", "protected_"],
+        [#0, "public", "public_"],
+        [#0, "refcount", "refcount_"],
+        [#0, "return", "return_"],
+        [#0, "s2out", "s2out"],
+        [#0, "scope", "scope"],
+        [#0, "static", "static_"],
+        [#0, "throw", "throw_"],
+        [#0, "true", "true_"],
+        [#0, "try", "try_"],
+        [#0, "typeinfo", "typeInfo"],
+        [#0, "typename", "typeName"],
+        [#0, "undefined", "undef_"],
+        [#0, "unset", "unset"],
+        [#0, "using", "using"],
+        [#0, "var", "var"],
+        [#0, "while", "while_"]
+    ]
+};
+
+const typeInfo = {
+    prototype: undefined,
+    cfunc: 's2_eval.c::s2_ptoken_typeinfo()',
+    list:[
+        /* typeinfo sub-keywords format:
+           [# 0 (hash code placeholder), "typeinfo-word", "TYPEINFO_xxx enum entry"],
+           ... repeat ... 
+
+           Reminder to self: if we get collisions across the older xxx and
+           newer x-x-x forms of these, we can reasonably split them into
+           two lists and do two lookups.
+        */
+        [# 0, "cannew", "TYPEINFO_CANNEW"],
+        [# 0, "can-new", "TYPEINFO_CANNEW"],
+        [# 0, "hasarray", "TYPEINFO_HASARRAY"],
+        [# 0, "has-array", "TYPEINFO_HASARRAY"],
+        [# 0, "hasbuffer", "TYPEINFO_HASBUFFER"],
+        [# 0, "has-buffer", "TYPEINFO_HASBUFFER"],
+        [# 0, "hasenum", "TYPEINFO_HASENUM"],
+        [# 0, "has-enum", "TYPEINFO_HASENUM"],
+        [# 0, "hasexception", "TYPEINFO_HASEXCEPTION"],
+        [# 0, "has-exception", "TYPEINFO_HASEXCEPTION"],
+        [# 0, "hashash", "TYPEINFO_HASHASH"],
+        [# 0, "has-hash", "TYPEINFO_HASHASH"],
+        [# 0, "hasnative", "TYPEINFO_HASNATIVE"],
+        [# 0, "has-native", "TYPEINFO_HASNATIVE"],
+        [# 0, "hasobject", "TYPEINFO_HASOBJECT"],
+        [# 0, "has-object", "TYPEINFO_HASOBJECT"],
+        [# 0, "hasprototype", "TYPEINFO_HASPROTOYPE"],
+        [# 0, "has-prototype", "TYPEINFO_HASPROTOYPE"],
+        [# 0, "isarray", "TYPEINFO_ISARRAY"],
+        [# 0, "is-array", "TYPEINFO_ISARRAY"],
+        [# 0, "isbool", "TYPEINFO_ISBOOL"],
+        [# 0, "is-bool", "TYPEINFO_ISBOOL"],
+        [# 0, "isbuffer", "TYPEINFO_ISBUFFER"],
+        [# 0, "is-buffer", "TYPEINFO_ISBUFFER"],
+        [# 0, "iscallable", "TYPEINFO_ISCALLABLE"],
+        [# 0, "is-callable", "TYPEINFO_ISCALLABLE"],
+        [# 0, "iscontainer", "TYPEINFO_ISCONTAINER"],
+        [# 0, "is-container", "TYPEINFO_ISCONTAINER"],
+        [# 0, "isdeclared", "TYPEINFO_ISDECLARED"],
+        [# 0, "is-declared", "TYPEINFO_ISDECLARED"],
+        [# 0, "isderefable", "TYPEINFO_ISDEREFABLE"],
+        [# 0, "is-derefable", "TYPEINFO_ISDEREFABLE"],
+        [# 0, "isdouble", "TYPEINFO_ISDOUBLE"],
+        [# 0, "is-double", "TYPEINFO_ISDOUBLE"],
+        [# 0, "isenum", "TYPEINFO_ISENUM"],
+        [# 0, "is-enum", "TYPEINFO_ISENUM"],
+        [# 0, "isexception", "TYPEINFO_ISEXCEPTION"],
+        [# 0, "is-exception", "TYPEINFO_ISEXCEPTION"],
+        [# 0, "isfunction", "TYPEINFO_ISFUNCTION"],
+        [# 0, "is-function", "TYPEINFO_ISFUNCTION"],
+        [# 0, "ishash", "TYPEINFO_ISHASH"],
+        [# 0, "is-hash", "TYPEINFO_ISHASH"],
+        [# 0, "isinteger", "TYPEINFO_ISINT"],
+        [# 0, "is-integer", "TYPEINFO_ISINT"],
+        [# 0, "isiterating", "TYPEINFO_ISITERATING"],
+        [# 0, "is-iterating", "TYPEINFO_ISITERATING"],
+        [# 0, "isiteratinglist", "TYPEINFO_ISITERATINGLIST"],
+        [# 0, "is-iterating-list", "TYPEINFO_ISITERATINGLIST"],
+        [# 0, "isiteratingprops", "TYPEINFO_ISITERATINGPROPS"],
+        [# 0, "is-iterating-props", "TYPEINFO_ISITERATINGPROPS"],
+        [# 0, "islist", "TYPEINFO_ISLIST"],
+        [# 0, "is-list", "TYPEINFO_ISLIST"],
+        [# 0, "islocal", "TYPEINFO_ISLOCAL"],
+        [# 0, "is-local", "TYPEINFO_ISLOCAL"],
+        [# 0, "isnative", "TYPEINFO_ISNATIVE"],
+        [# 0, "is-native", "TYPEINFO_ISNATIVE"],
+        [# 0, "isnewing", "TYPEINFO_ISNEWING"],
+        [# 0, "is-newing", "TYPEINFO_ISNEWING"],
+        [# 0, "isnumber", "TYPEINFO_ISNUMBER"],
+        [# 0, "is-number", "TYPEINFO_ISNUMBER"],
+        [# 0, "isnumeric", "TYPEINFO_ISNUMERIC"],
+        [# 0, "is-numeric", "TYPEINFO_ISNUMERIC"],
+        [# 0, "isobject", "TYPEINFO_ISOBJECT"],
+        [# 0, "is-object", "TYPEINFO_ISOBJECT"],
+        [# 0, "isstring", "TYPEINFO_ISSTRING"],
+        [# 0, "is-string", "TYPEINFO_ISSTRING"],
+        [# 0, "istuple", "TYPEINFO_ISTUPLE"],
+        [# 0, "is-tuple", "TYPEINFO_ISTUPLE"],
+        [# 0, "isunique", "TYPEINFO_ISUNIQUE"],
+        [# 0, "is-unique", "TYPEINFO_ISUNIQUE"],
+        [# 0, "mayiterate", "TYPEINFO_MAYITERATE"],
+        [# 0, "may-iterate", "TYPEINFO_MAYITERATE"],
+        [# 0, "mayiteratelist", "TYPEINFO_MAYITERATELIST"],
+        [# 0, "may-iterate-list", "TYPEINFO_MAYITERATELIST"],
+        [# 0, "mayiterateprops", "TYPEINFO_MAYITERATEPROPS"],
+        [# 0, "may-iterate-props", "TYPEINFO_MAYITERATEPROPS"],
+        [# 0, "name", "TYPEINFO_NAME"],
+        [# 0, "refcount", "TYPEINFO_REFCOUNT"]
+    ]
+};
+
+const pragmas = {
+    prototype: undefined,
+    cfunc: 's2_eval.c::s2_ptoken_pragma()',
+    list:[
+        /* pragma sub-keywords format:
+           [# 0 (hash code placeholder), "pragma-word", "PRAGMA_xxx enum entry"],
+           ... repeat ... 
+        */
+        [# 0, "build-opt", "PRAGMA_BUILD_OPT"],
+        [# 0, "exception-stacktrace", "PRAGMA_EXCEPTION_STACKTRACE"],
+        [# 0, "rc", "PRAGMA_RC"],
+        [# 0, "refcount", "PRAGMA_REFCOUNT"],
+        [# 0, "sweep-interval", "PRAGMA_SWEEP_INTERVAL"],
+        [# 0, "trace-assert", "PRAGMA_TRACE_ASSERT"],
+        [# 0, "trace-sweep", "PRAGMA_TRACE_SWEEP"],
+        [# 0, "trace-token-stack", "PRAGMA_TRACE_TOKEN_STACK"],
+        [# 0, "vacuum-interval", "PRAGMA_VACUUM_INTERVAL"]
+    ]
+};
+
+/**
+   For pragma(build-opt IDENTIFIER)
+*/
+const pragmaBuildOpt = {
+    prototype: undefined,
+    cfunc: 'eval.c:s2_pragma_f_int_impl()',
+    W: proc(e/*this.list entry*/){return e.1},
+    list:[
+        /* [ 0 (hash code placeholder), C preprocessor symbol,
+           0 (dummy placeholder) ] */
+        [# 0, 'CWAL_OBASE_ISA_HASH', 0],
+        [# 0, 'CWAL_SIZE_T_BITS', 0],
+        [# 0, 'CWAL_VERSION_STRING', 0],
+        [# 0, 'CWAL_CFLAGS', 0],
+        [# 0, 'CWAL_CPPFLAGS', 0],
+        [# 0, 'DEBUG', 0],
+        [# 0, 'S2_AMALGAMATION_BUILD', 0],
+        [# 0, 'S2_OS_UNIX', 0],
+        [# 0, 'S2_OS_WINDOWS', 0]
+    ]
+};
+
+/**
+   cwal_rc_e entries.
+*/
+const cwalRc = {
+    prototype: undefined,
+    cfunc: 's2.c:s2_cstr_to_rc()',
+    // W() generates the body for the W() macro call.
+    W: proc(e/*this.list entry*/){return e.1},
+    list:[
+        /* [ 0 (hash code placeholder), CWAL_RC/S2_RC enum entry name,
+             0 (dummy placeholder) ] */
+        [# 0, "CWAL_RC_OK", 0],
+        [# 0, "CWAL_RC_ERROR", 0],
+        [# 0, "CWAL_RC_OOM", 0],
+        [# 0, "CWAL_RC_FATAL", 0],
+
+        [# 0, "CWAL_RC_CONTINUE", 0],
+        [# 0, "CWAL_RC_BREAK", 0],
+        [# 0, "CWAL_RC_RETURN", 0],
+        [# 0, "CWAL_RC_EXIT", 0],
+        [# 0, "CWAL_RC_EXCEPTION", 0],
+        [# 0, "CWAL_RC_ASSERT", 0],
+
+        [# 0, "CWAL_RC_MISUSE", 0],
+        [# 0, "CWAL_RC_NOT_FOUND", 0],
+        [# 0, "CWAL_RC_ALREADY_EXISTS", 0],
+        [# 0, "CWAL_RC_RANGE", 0],
+        [# 0, "CWAL_RC_TYPE", 0],
+        [# 0, "CWAL_RC_UNSUPPORTED", 0],
+        [# 0, "CWAL_RC_ACCESS", 0],
+
+        [# 0, "CWAL_RC_IS_VISITING", 0],
+        [# 0, "CWAL_RC_IS_VISITING_LIST", 0],
+        [# 0, "CWAL_RC_DISALLOW_NEW_PROPERTIES", 0],
+        [# 0, "CWAL_RC_DISALLOW_PROP_SET", 0],
+        [# 0, "CWAL_RC_DISALLOW_PROTOTYPE_SET", 0],
+        [# 0, "CWAL_RC_CONST_VIOLATION", 0],
+        [# 0, "CWAL_RC_LOCKED", 0],
+        
+        [# 0, "CWAL_RC_CYCLES_DETECTED", 0],
+        [# 0, "CWAL_RC_DESTRUCTION_RUNNING", 0],
+        [# 0, "CWAL_RC_FINALIZED", 0],
+        [# 0, "CWAL_RC_HAS_REFERENCES", 0],
+        [# 0, "CWAL_RC_INTERRUPTED", 0],
+        [# 0, "CWAL_RC_CANCELLED", 0],
+        [# 0, "CWAL_RC_IO", 0],
+        [# 0, "CWAL_RC_CANNOT_HAPPEN", 0],
+
+        [# 0, "CWAL_RC_JSON_INVALID_CHAR", 0],
+        [# 0, "CWAL_RC_JSON_INVALID_KEYWORD", 0],
+        [# 0, "CWAL_RC_JSON_INVALID_ESCAPE_SEQUENCE", 0],
+        [# 0, "CWAL_RC_JSON_INVALID_UNICODE_SEQUENCE", 0],
+        [# 0, "CWAL_RC_JSON_INVALID_NUMBER", 0],
+        [# 0, "CWAL_RC_JSON_NESTING_DEPTH_REACHED", 0],
+        [# 0, "CWAL_RC_JSON_UNBALANCED_COLLECTION", 0],
+        [# 0, "CWAL_RC_JSON_EXPECTED_KEY", 0],
+        [# 0, "CWAL_RC_JSON_EXPECTED_COLON", 0],
+        
+        [# 0, "CWAL_SCR_CANNOT_CONSUME", 0],
+        [# 0, "CWAL_SCR_INVALID_OP", 0],
+        [# 0, "CWAL_SCR_UNKNOWN_IDENTIFIER", 0],
+        [# 0, "CWAL_SCR_CALL_OF_NON_FUNCTION", 0],
+        [# 0, "CWAL_SCR_MISMATCHED_BRACE", 0],
+        [# 0, "CWAL_SCR_MISSING_SEPARATOR", 0],
+        [# 0, "CWAL_SCR_UNEXPECTED_TOKEN", 0],
+        [# 0, "CWAL_SCR_UNEXPECTED_EOF", 0],
+        [# 0, "CWAL_SCR_DIV_BY_ZERO", 0],
+        [# 0, "CWAL_SCR_SYNTAX", 0],
+        [# 0, "CWAL_SCR_EOF", 0],
+        [# 0, "CWAL_SCR_TOO_MANY_ARGUMENTS", 0],
+        [# 0, "CWAL_SCR_EXPECTING_IDENTIFIER", 0],
+
+        [# 0, "S2_RC_END_EACH_ITERATION", 0],
+        [# 0, "S2_RC_TOSS", 0]
+    ]
+};
+//foreach(cwalRc=>i,v) cwalRc[2] = cwalRc[1];
+
+
+/**
+  s2 keyword hash. This routine must align perfectly with
+  s2_eval.c::s2_keyword_perfect_hash().
+    
+  All of these variations have worked out so far...
+
+  h = (h << 1) + 100*i + i*c.charAt(0,true) - i*35;
+
+  h = (h << 1) + 100*i + i*c.charAt(0,true) - i*35;
+
+  h = (h << 1) + 45*i + c.charAt(0,true) - 35;
+
+  h = (h << 1) + i * (c.charAt(0,true) - 64); // effectively discards first letter!
+
+  h = (h << 1) + (i+1) * (c.charAt(0,true) - 64); // breaks with words containing numbers
+
+  Then:  while(h > 0x7fff_ffff) h=h>>1;
+
+  The while() part is to keep the results inside 32-bits, for C-level
+  portability with switch/case values. (Since switching to C99, we can
+  probably get away with 64-bit values for switch/case entries.)
+
+  Note that the magic 35==ASCII '$'-1, the lowest-numbered keyword
+  letter s2 internally uses.
+
+  Returns 0 if the input contains invalid (for this limited purpose)
+  characters.
+*/
+const hash = proc(v){
+    var h = 0, z;
+    foreach(v=>i,c){
+        z = c.charAt(0,true);
+        (z>122/*'z'*/ || z<36/*'$'*/) && return 0;
+        h = (h << 1) + (i+1) * (z - 35);
+        while(h > 0x7fff_ffff) h=h>>1;
+    }
+    return h;
+};
+
+/**
+   Check list for dupes and create 'case' statements for
+   hash==>identifier lookup. If there's a collision an exception is
+   thrown and either the inputs or the hash routine needs to be
+   modified until there isn't a collision!
+
+   The argument must follow the structure used by the (kw, typeInfo,
+   pragmas).list members.
+*/
+const hashList = proc(list) {
+    affirm typeinfo(isarray list);
+    var hexDigits = 4;
+    foreach(@list=>n,e){
+        const h = hash(e.1);
+        h || throw "Could not hash "+e.1;
+        if(const x = check # h){
+            throw "Collision: ".concat(h,' == "',e.1,'" "',x.1,'"');
+        }
+        check.insert(h, e);
+        e.0 = h;
+        if(h & 0xFF00_0000 && hexDigits<8) hexDigits = 8;
+        else if(h & 0xFFFF_0000 && hexDigits<6) hexDigits = 6;
+        else if(h >> 32) throw "".concat(
+            "Hash is too long: 32 bits is the limit: word=",
+            e.1
+        )
+        /* noting ^^^^^ that this cannot properly fail if cwal CWAL_INT_T_BITS is 32
+           or less, but it's been a long time since it's been built that way in practice.
+           This limitation is imposed by switch/case blocks in C: we cannot portably
+           use more than 32 bits in those, and this whole hashing business is useless
+           without the ability to quickly find the result via switch/case.
+        */;
+    }
+    list.hexDigits = hexDigits;
+    check.clearEntries();
+    return list;
+} using {
+    check: new s2.Hash(117)
+};
+
+
+foreach({
+    keyword: kw,
+    typeinfo: typeInfo,
+    pragma: pragmas,
+    buildopt: pragmaBuildOpt,
+    rc: cwalRc
+}=>k, v){
+    gotOpt && !opt[k] && continue
+    /* i.e. do the following only if passed --k or passed no
+       options. */;
+    s2out << "/* ================= For "<<v.cfunc<<": */\n";
+    const W = v.W ||| proc(e){
+        return "".concat('"',e.1,'",',e.2 ||| e.1)
+    };
+    foreach(@hashList(v.list)=>e){
+        s2out << 'case 0x'<<
+            e.0.toString('0'+v.list.hexDigits+'x')
+            <<': W('<< W(e) << ');\n';
+    }
+    s2out << "/* ("<<v.list.#<<" " << k<<" entries) */\n";
+}

@@ -1,0 +1,581 @@
+(***********************************************************************
+An incomplete, informal, and possibly not 100% correct, pseudo-EBNF
+grammar for s2...
+
+http://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_Form
+***********************************************************************)
+
+(***********************************************************************
+Bootstrap stuff...
+
+Notes:
+
+- Token names are case sensitive.
+
+- Literal byte values are given in the form byte(0xXX) without any
+  quoting, e.g. byte(0xEF), and byte ranges use brange(0xSTART,0xEND)
+  notation, denoting an inclusive range.
+
+- The grammar elides insignificant ("junk") tokens except to (A)
+  explain what tokens are junk and (B) where they have syntactical
+  significance.
+
+- Backslash escaping: still working on that
+
+- The notation alias(X) means the entry being defined is simply an
+  alias for X.
+
+***********************************************************************)
+
+bof = ? beginning of input ?;
+eof_real = ? end of input ?;
+veof = ? end of recursively parsed block construct, a virtual eof ?;
+eof = eof_real | veof;
+crnl = byte(0x0D), byte(0x0A), (* \r\n *);
+nl = byte(0x10) (* \n *);
+backslash = byte(0x5C) (* \ *);
+eol = crnl | nl;
+dot = ".";
+digit1_9 = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+digit0 = "0";
+digit_b2 = digit0 | "1";
+digit_b8 = digit0 | "1" | "2" | "3" | "4" | "5" | "6" | "7";
+digit = digit0 | digit1_9;
+letter_af1 = "a" | "b" | "c" | "d" | "e" | "f";
+letter_af2 = "A" | "B" | "C" | "D" | "E" | "F";
+digit_b16 = digit | letter_af1 | letter_af2;
+asciiVisible = ? any byte value between 32d and 127d which is the not
+                 the 2nd or subsequent byte of a multibyte character ?;
+utf8_char = ? any UTF8 character ?;
+prefix_hex = "0", "x" | "X";
+prefix_octal = "0o";
+prefix_binary = "0b";
+byte_literal = prefix_hex, digit_b16, digit_b16;
+utf8_bom = bof, 0xEF, 0xBB, 0xBF (* literal byte values *);
+aboveAscii = ? any utf8_char character with 2+ bytes (a numeric value of >127) ? 
+letter = "_"
+       | "$"
+       | brange(0x41,0x5A) (* A..Z *)
+       | brange(0x61,0x7A) (* a..z *)
+       | utf8_char-brange(0x00,0xFF) (* all UTF8 chars>255d are legal identifiers in s2 *);
+identifier_start = letter;
+identifier_suffix = {identifier_start | digit};
+identifier = identifier_start , {identifier_suffix};
+semi = ';';
+eox = semi | eof
+    (* in a few contexts not representable at this level(?), eol is
+       treated as eox as well. In some contexts eof is an eox
+       and in others (mid-expression) it is a syntax error.
+     *);
+
+comment_c = "/*", {-"*/"}, "*/";
+comment_cpp = "//", {-eol}, (eol|eof);
+comment = comment_c | comment_cpp;
+
+space = " " | "\t" | "\r" | (backslash, (nl | crnl))
+      (* eol is _normally_ treated as meaningless noise,
+         but in a small handful of contexts it acts as eox. *);
+
+junk = space | comment | comment_cpp
+     (* junk tokens are skipped over: the evaluation loop never sees
+        them. *);
+
+
+(***********************************************************************
+POD data types
+***********************************************************************)
+stringDQ = '"', {'\"'} | {utf8_char - '"'}, '"';
+stringSQ = "'", {"\'"} | {utf8_char - "'"}, "'";
+string = stringDQ | stringSQ;
+
+(*
+   These integers aren't _quite_ right: binary, octal, and hex support
+   any number of _ characters as visual separators. Decimal arguably
+   also should but currently doesn't.
+*)
+integer_b2 = prefix_binary, digit_b2, {digit_b2};
+integer_b8 = prefix_octal, digit_b8, {digit_b8};
+integer_b10 = digit0 | (digit1_9, {digit});
+integer_b16 = prefix_hex, digit_b16, {digit_b16};
+integer = integer_b8 | integer_b10 | integer_16;
+
+double = integer_b10, dot, digit, {digit};
+
+null = alias(kw_null);
+undefined = alias(kw_undefined);
+true = alias(kw_true);
+false = alias(kw_false);
+
+heredoc_tag = identifier | string;
+heredoc = '<<<',
+        {space}, {':'} (* changes space trimming rules *),
+        {space}, heredoc_tag, space, {space},
+        {-heredoc_tag},
+        heredoc_tag
+        (* the 2nd and 3rd instances of heredoc_tag
+           MUST match the 1st instance byte-for-byte,
+           including any quotes. *)
+;
+
+literal_pod = integer | double | string | heredoc
+            | null | undefined
+            | true | false
+;
+
+(***********************************************************************
+High-level data type literals...
+
+Notes:
+
+- Comma lists are handled differently for object/array literals,
+separating individual elements of the propery list.
+
+***********************************************************************)
+
+object_key = string | identifier | ('[', expr , ']');
+object_kvp = object_key, ':', expr;
+object_kvps = object_kvp, {op_comma, object_kvp};
+literal_object = '{', {object_kvps}, '}';
+literal_hash = '{', '#', {object_kvps}, '}';
+
+array_entries = expr_no_comma, {op_comma, expr_no_comma};
+literal_array = '[', {array_entries}, ']';
+literal_tuple = '[', '#', {array_entries}, ']';
+
+literal = literal_pod | literal_object | literal_hash | literal_array | literal_tuple;
+
+(***********************************************************************
+Operators...
+***********************************************************************)
+
+op_arrow = '->';
+op_arrow2 = '=>';
+op_assign = '=';
+op_comma = ',';
+op_dot = '.';
+op_inherits = "inherits";
+op_minus = '-';
+op_minuseq = '-=';
+op_minusminus = '--';
+op_not = '!';
+op_plus = '+';
+op_pluseq = '+=';
+op_plusplus = '++';
+op_shift_l = '<<';
+op_shift_r = '>>';
+op_elvis = '?:';
+
+(* many more operators missing here... *)
+
+ops_prefix = op_plus | op_plusplus
+          | op_minus | op_minusminus
+          | op_not
+          ;
+ops_suffix = op_plus | op_plusplus
+          | op_minus | op_minusminus
+          ;
+ops_binary = op_plus | op_minus
+          | op_inherits | op_elvis
+          ;
+
+ops_assignment_combo = op_pluseq | op_minuseq;
+ops_assignment = op_assign | ops_assignment_combo;
+
+(* ... *)
+
+
+(***********************************************************************
+Expressions
+***********************************************************************)
+
+atom = literal
+     | ('(', expr_list , ')');
+
+program = {expr_list} ;
+
+
+pfix_target = (* prefix/postfix op target *)
+            identifier | prop_access;
+ternary = expr, '?', expr, ':', expr;
+
+expr_no_comma =
+    atom
+    | keyword_expr
+    |(
+       (expr_no_comma, ops_binary, expr_no_comma)
+        | (ops_prefix, pfix_target)
+        | (pfix_target, ops_suffix)
+     )
+;
+   
+expr = expr_no_comma;
+expr_list = expr_no_comma, {op_comma, expr};
+
+script_block = '{', program, '}';
+
+prop_key = identifier
+         | integer
+         | double
+         | string
+         | expr (* OMG: (obj.{a:1} = 1) actually works. *)
+         | ('(', prop_key, ')'
+            (* note that interpretation of identifiers is different
+               in this case! *)
+           )
+;
+prop_ndx_access = '[', expr, ']';
+
+prop_access = identifier,
+            (dot, prop_key)
+            | prop_ndx_access
+            ;
+
+array_append = expr, '[', {junk}, ']' (* lhs must be-a array *);
+
+assignment_target = identifier | prop_access | array_append;
+
+assignment = assignment_target, ops_assignment, expr;
+
+(***********************************************************************
+Keywords...
+***********************************************************************)
+
+kw_affirm = "affirm";
+kw_assert = "assert";
+kw_break = "break";
+kw_catch = "catch";
+kw_class = "class";
+kw_const = "const";
+kw_continue = "continue";
+kw_defined = "defined";
+kw_delete = "delete";
+kw_do = "do";
+kw_eval = "eval";
+kw_exception = "exception";
+kw_exists = "exists";
+kw_exit = "exit";
+kw_false = "false";
+kw_fatal = "fatal";
+kw_for = "for";
+kw_foreach = "foreach";
+kw_function = "function";
+kw_if = "if";
+kw_import = "import" (* unused but reserved *);
+kw_inherits = "inherits";
+kw_interface = "interface";
+kw_nameof = "nameof";
+kw_new = "new";
+kw_null = "null";
+kw_pragma = "pragma";
+kw_private = "private";
+kw_proc = "proc";
+kw_protected = "protected";
+kw_public = "public";
+kw_refcount = "refcount" (* deprecated: use pragma(refcount expr) *);
+kw_return = "return";
+kw_s2out = "s2out";
+kw_scope = "scope";
+kw_static = "static";
+kw_throw = "throw";
+kw_true = "true";
+kw_try = "try";
+kw_typeinfo = "typeinfo";
+kw_typename = "typename";
+kw_undefined = "undefined";
+kw_unset = "unset";
+kw_var = "var";
+kw_while = "while";
+
+keyword = kw_affirm
+        | kw_assert
+        | kw_break
+        | kw_catch
+        | kw_class
+        | kw_const
+        | kw_continue
+        | kw_defined
+        | kw_delete
+        | kw_do
+        | kw_eval
+        | kw_exception
+        | kw_exists
+        | kw_exit
+        | kw_false
+        | kw_fatal
+        | kw_for
+        | kw_foreach
+        | kw_function
+        | kw_if
+        | kw_import
+        | kw_inherits
+        | kw_interface
+        | kw_nameof
+        | kw_new
+        | kw_null
+        | kw_pragma
+        | kw_private
+        | kw_proc
+        | kw_protected
+        | kw_public
+        | kw_refcount
+        | kw_return
+        | kw_s2out
+        | kw_scope
+        | kw_static
+        | kw_throw
+        | kw_true
+        | kw_try
+        | kw_typeinfo
+        | kw_typename
+        | kw_undefined
+        | kw_unset
+        | kw_var
+        | kw_while
+;
+
+(*
+        Loops/Flow control...
+*)
+kxp_if = kw_if, ?todo?;
+kxp_do = kw_do, ?todo?;
+kxp_for = kw_for, ?todo?;
+kxp_foreach = kw_foreach, ?todo?;
+kxp_while = kw_while, ?todo?;
+
+(*
+        Eval family...
+*)
+
+expr_for_eval1 = (* for eval-like keywords which treat {...} as
+                   a script block *)
+              expr
+              |
+              {op_arrow}, (expr | script_block)
+              ;
+
+expr_for_eval2 = (* for keywords which treat {...} as an object literal *)
+               {op_arrow}, expr;
+
+
+expr_for_eval_capture = (* for keywords which treat => expr a captured expression string *)
+               {op_arrow2}, expr | ("{", program ,"}");
+
+kxp_break = kw_break, {expr_for_eval2};
+kxp_catch = kw_catch, expr_for_eval1;
+kxp_continue = kw_continue, {expr_for_eval2} (* expr is currently useless *);
+kxp_eval = kw_eval, expr_for_eval1;
+kxp_exit = kw_exit, {expr_for_eval2};
+kxp_fatal = kw_fatal, {expr_for_eval2};
+kxp_return = kw_return, {expr_for_eval2};
+kxp_scope = kw_scope, expr_for_eval1;
+kxp_throw = kw_throw, expr_for_eval2;
+(*
+    Certain eval family members accept => expr to capture an expression's bytes without
+    evaluating it.
+*)
+kxp_capture = (kw_break | kw_eval | kw_exit | kw_fatal | kw_return), expr_for_eval_capture;
+
+(*
+        Assertions...
+*)
+kxp_affirm = kw_affirm, expr;
+kxp_assert = kw_assert, expr;
+
+(*
+    Var/const declation/manipulation...
+
+    typename is deprecated by typeinfo(name operand). 
+*)
+kxp_nameof = kw_nameof, identifier;
+kxp_typename = kw_typename, expr;
+
+kxp_sym_1 = identifier;
+kxp_sym_2 = identifier, op_assign, expr;
+kxp_sym_decl = kxp_sym_1 | kxp_sym_2;
+kxp_sym_decl_list  = kxp_sym_decl, {op_comma, kxp_sym_decl};
+kxp_const = kw_const, kxp_sym_decl, {op_comma, kxp_sym_decl};
+kxp_unset_arg = identifier | prop_access;
+kxp_unset = kw_unset, kxp_unset_args, {kxp_unset_args};
+kxp_var = kw_var, [kxp_sym_decl], {kxp_sym_decl_list};
+
+(*
+        Literal values...
+*)
+kxp_false = kw_false;
+kxp_true = kw_true;
+kxp_undefined = kw_undefined;
+kxp_null = kw_null;
+kxp_exception_code = integer | string;
+kxp_exception_message = expr;
+kxp_exception = kw_exception,
+    '(',
+    (kxp_exception_message
+    |
+    (kxp_exception_code , kxp_exception_message),
+    ')';
+
+(*
+        Functions...
+*)
+kxp_function_kw = kw_function | kw_proc;
+kxp_function_name = {identifier}
+kxp_function_params = '(', {kxp_sym_decl_list}, ')';
+kxp_function_body = '{', program, '}';
+kxp_function = kxp_function_kw,
+               kxp_function_name,
+               kxp_function_params,
+               kxp_function_body;
+kxp_proc = kxp_function;
+
+(*
+        Misc...
+*)
+kxp_inherits = kw_inherits, ?works like an operator?;
+kxp_refcount = kw_refcount, expr;
+
+(*
+    typeinfo
+
+    201912: this list is missing the typeinfo options
+            added this month.
+*)
+typeinfo_cannew = "cannew";
+typeinfo_hasarray = "hasarray";
+typeinfo_hasenum = "hasenum";
+typeinfo_hasexception = "hasexception";
+typeinfo_hashash = "hashash";
+typeinfo_hasnative = "hasnative";
+typeinfo_hasobject = "hasobject";
+typeinfo_hasprotoype = "hasprototype";
+typeinfo_isarray = "isarray";
+typeinfo_isbool = "isbool";
+typeinfo_isbuffer = "isbuffer";
+typeinfo_iscallable = "iscallable";
+typeinfo_iscontainer = "iscontainer";
+typeinfo_isdeclared = "isdeclared";
+typeinfo_isderefable = "isderefable";
+typeinfo_isdouble = "isdouble";
+typeinfo_isenum = "isenum";
+typeinfo_isexception = "isexception";
+typeinfo_isfunction = "isfunction";
+typeinfo_ishash = "ishash";
+typeinfo_isint = "isinteger";
+typeinfo_islist = "islist";
+typeinfo_islocal = "islocal";
+typeinfo_isnative = "isnative";
+typeinfo_isnewing = "isnewing";
+typeinfo_isnumber = "isnumber";
+typeinfo_isnumeric = "isnumeric";
+typeinfo_isobject = "isobject";
+typeinfo_isstring = "isstring";
+typeinfo_istuple = "istuple";
+typeinfo_isunique = "isunique";
+typeinfo_mayiterate = "mayiterate";
+typeinfo_name = "name";
+typeinfo_refcount = "refcount";
+
+typeinfo_op_identifier = (typeinfo_isdeclared | typeinfo_islocal), identifier;
+typeinfo_op_expr = (
+    typeinfo_cannew |
+    typeinfo_hasarray |
+    typeinfo_hasenum |
+    typeinfo_hasexception |
+    typeinfo_hashash |
+    typeinfo_hasnative |
+    typeinfo_hasobject |
+    typeinfo_hasprotoype |
+    typeinfo_isarray |
+    typeinfo_isbool |
+    typeinfo_isbuffer |
+    typeinfo_iscallable |
+    typeinfo_iscontainer |
+    typeinfo_isderefable |
+    typeinfo_isdouble |
+    typeinfo_isenum |
+    typeinfo_isexception |
+    typeinfo_isfunction |
+    typeinfo_ishash |
+    typeinfo_isint |
+    typeinfo_islist |
+    typeinfo_isnative |
+    typeinfo_isnewing |
+    typeinfo_isnumber |
+    typeinfo_isnumeric |
+    typeinfo_isobject |
+    typeinfo_isstring |
+    typeinfo_istuple |
+    typeinfo_isunique |
+    typeinfo_mayiterate |
+    typeinfo_name |
+    typeinfo_refcount
+), expr;
+
+pragma_op = (TODO: list of pragmas)
+pragma_op_expr = pragma_op, expr;
+
+kxp_typeinfo kw_typeinfo, '(', (typeinfo_op_identifier | typeinfo_op_expr) ,')';
+kxp_pragma (kw_pragma, '(', pragma_op_expr ,')') (* "setters" *) 
+           | (kw_pragma, '(', pragma_op, ')') (* "getters" *);
+
+(*
+        Reserved...
+*)
+kxp_class = kw_class, ?reserved?;
+kxp_defined = kw_defined, ?reserved?;
+kxp_delete = kw_delete, ?reserved?;
+kxp_exists = kw_exists, ?reserved?;
+kxp_foreach = kw_foreach, ?reserved?;
+kxp_import = kw_import, ?reserved?;
+kxp_interface = kw_interface, ?reserved?;
+kxp_static = kw_static, ?reserved?;
+kxp_private = kw_private, ?reserved?;
+kxp_protected = kw_protected, ?reserved?;
+kxp_public = kw_public, ?reserved?;
+kxp_try = kw_try, ?reserved?;
+
+keyword_expr = kxp_affirm
+           | kxp_assert
+           | kxp_break
+           | kxp_catch
+           | kxp_class
+           | kxp_const
+           | kxp_continue
+           | kxp_defined
+           | kxp_delete
+           | kxp_do
+           | kxp_eval
+           | kxp_exception
+           | kxp_exists
+           | kxp_exit
+           | kxp_false
+           | kxp_fatal
+           | kxp_for
+           | kxp_foreach
+           | kxp_function
+           | kxp_if
+           | kxp_import
+           | kxp_inherits
+           | kxp_interface
+           | kxp_nameof
+           | kxp_new
+           | kxp_null
+           | kxp_pragma
+           | kxp_private
+           | kxp_proc
+           | kxp_protected
+           | kxp_public
+           | kxp_refcount
+           | kxp_return
+           | kxp_s2out
+           | kxp_scope
+           | kxp_static
+           | kxp_throw
+           | kxp_true
+           | kxp_try
+           | kxp_typeinfo
+           | kxp_typename
+           | kxp_undefined
+           | kxp_unset
+           | kxp_var
+           | kxp_while
+;

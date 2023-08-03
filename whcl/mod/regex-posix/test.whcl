@@ -1,0 +1,549 @@
+# Demo and test code for the regex-posix module.
+
+# The module only has one function: compile(), analog to regcomp(3):
+decl regcomp whcl.regex-posix
+if {!$regcomp} {
+    if {[[whcl install-api].index-of regex-posix] >= 0} {
+        set regcomp [whcl install-api regex-posix]
+    } else {
+        set regcomp [whcl load-module 'regex-posix.so']
+    }
+}
+whcl.install-api Script
+assert [info is-function $regcomp]
+assert 'posix' == regcomp.flavor
+
+decl re
+decl m
+
+assert 'ho' == [[regcomp '\\(h[aou]\\)' 'B'].exec 'hiho'].1
+
+# NOTEOL says to not treat the end of the pattern string as an EOL for purposes
+# of the $ specifier...
+set re [regcomp 'foo$' 'n'/*==>regcomp.NEWLINE*/]
+assert [re test ' foo']
+assert ![re test 'foo ']
+assert [re test 'bar\nfoo']
+assert ![re test 'bar\nfoo' 'e'/*==>re.test.NOTEOL*/]
+assert [re test 'foo\nfoo' 'e'/*==>re.test.NOTEOL*/]; # matches first foo because of the NEWLINE flag
+
+set re [regcomp 'a(b)(c)' 's'/*==>regcomp.NOSUB*/]
+#echo __FLC "About to NOSUB exec:" re.pattern
+set m [re exec 'abc']
+#echo __FLC "NOSUB exec'd:" re.pattern $m
+assert true == $m /* with the NOSUB flag we don't know the position of a match,
+                   so cannot return a list containing the whole match. Thus
+                   we return a boolean in that case. */
+set re [regcomp re.pattern]
+set m [re exec abc]
+assert [info is-list $m]
+assert abc == m.0
+assert b == m.1
+assert c == m.2
+
+set re [regcomp abc s/*==>regcomp.NOSUB*/];
+#echo __FLC "About to NOSUB exec:" re.pattern
+set m [re.exec '  abc']
+#echo __FLC "NOSUB exec'd:" re.pattern $m
+assert true == $m; # again, NOSUB can't return position information, so we can't return ["abc"].
+assert false == [re exec 'cde']
+unset re m
+
+assert 'CWAL_RC_RANGE' == [[catch{
+    decl re [regcomp '(1)(2)(3)(4)(5)(6)(7)(8)(9)(10)'
+            /*10 sub-captures, but internal limit is 10, including $0*/]
+    decl m [re.exec '1234567891011']
+}].code-string]
+
+eval -scope {
+    /**
+       POSIX-specific matchAll() tests.
+
+       Curiously, the POSIX API does not report capture information,
+       *not even for the full-match result*, if a regex is compiled
+       with the NOSUB flag.
+
+       matchAll() cannot work when a regex is compiled with NOSUB because
+       POSIX regexec() cannot report the position of a match in that case,
+       and we need the start/end positions in order to locate the match
+       substrings.
+    */
+    decl re [regcomp '[a-z]+' 's']
+    catch ex {re match-all "x"}
+    assert [info is-exception $ex]
+    assert 0 < [ex.message.index-of NOSUB]
+    assert [[catch {[regcomp 'a' 's'].match-all 'a'}].message.index-of NOSUB] > 0
+    assert [[catch {[regcomp 'a' 's'].match-all -capture 'a'}].message.index-of NOSUB] > 0
+}
+
+eval -scope {
+    # POSIX-specific replace() tests.
+    # replace doesn't work together with NOSUB, for the same reason
+    # match-all can't (apparent limitation of the POSIX API).
+    decl re [regcomp '[a-z]+' 's'];
+    assert 0 < [[catch {re.replace 'x' ''}].message.index-of NOSUB]
+    set re [regcomp '[ \t]*([a-z]+)[ \t]*(;)?']
+    decl x [re replace
+            'a\t  ;\tb; c'
+            {
+                decl rc
+                #echo __FLC this $_
+                assert this == $re
+                if {_.2} {set rc [[_.1.to-upper].concat _.2]} \
+                else {set rc [_.1.to-upper]}
+                eval $rc
+            }
+            '$E']
+    assert 'A;B;C' == $x
+    assert $x == [re replace 'a\t  ;\tb; c' [proc {a} {
+        decl m [this.exec $a]
+        # At this point we know this regex matches the input (oneMatch),
+        # so we don't need to bother checking whether m is falsy.
+        decl u [m.1.to-upper]
+        if {m.2} {set u [u concat m.2]}
+        return $u
+    }]]
+    # whcl.Script as a callback works like a string with the E_ match
+    # flags but is more efficient because it's only compiled once.
+    set x [re replace
+            'a\t  ;\tb; c'
+            [new whcl.Script {{{:
+                decl rc
+                #echo __FLC this $_
+                assert this == $re
+                if {_.2} {set rc [[_.1.to-upper].concat _.2]} \
+                else {set rc [_.1.to-upper]}
+                eval $rc
+            }}}]]
+    assert 'A;B;C' == $x
+}
+
+eval -scope {
+    # POSIX-specific split() tests.
+    # split() doesn't work together with NOSUB, for the same reason
+    # match-all() can't (apparent limitation of the POSIX API).
+    decl re [regcomp 'a' 's']
+    assert 0 < [[catch {re.split ''}].message.index-of NOSUB]
+    assert [[regcomp '^a'].test 'abc']
+    decl m [[regcomp '^a'].split 'abc']
+    assert 2 == [m.length];
+    affirm "" == m.0;
+    affirm "bc" == m.1;
+    set m [[regcomp '^a'].split 'abc' 'b']
+    assert 1 == [m.length]
+    assert abc == m.0
+}
+
+eval -scope {
+    /** POSIX-specific each-match tests. */
+    decl r [regcomp '.' 's']
+    assert 0 < [[catch {r.each-match 'a' ''}].message.index-of NOSUB]
+    # Yet another algo which POSIX NOSUB cannot participate in.
+}
+
+eval -scope {
+    decl re
+    # The regcomp.NEWLINE flag changes how the ^ and $ anchors work...
+    set re [regcomp 'foo$']
+    affirm 'foo$' == re.pattern
+
+    affirm [info is-function re.destroy]
+    affirm [info is-function re.exec]
+    affirm [info is-function re.test]
+    affirm re.exec.prototype == re.test.prototype
+
+    affirm 'CWAL_RC_TYPE' == [[catch {re test 'a' null/*non-string*/}].code-string]
+
+    affirm [re test foo]
+    affirm ![re test 'foo ']
+    affirm ![re test 'foo\nbar']
+    # contrast these ^^^^ 4 lines with the following 4...
+    set re [regcomp 'foo$' 'n']
+    affirm [re test 'foo']
+    affirm ![re test 'foo '];
+    affirm [re test 'blah foo\nbar']
+
+    // Similarly, the '^' anchor...
+    set re [regcomp '^foo']
+    affirm [re test 'foo']
+    affirm ![re test 'bar\nfoo']
+    set re [regcomp re.pattern 'n']
+    affirm [re test foo]
+    affirm [re test 'bar\nfoo']
+
+    # i'm not sure why one would want NOTBOL, but here it is...
+    set re [regcomp '^foo']
+    affirm ![re test ' foo']
+    affirm [re test 'foo ']
+    affirm ![re test 'bar\nfoo ']
+    affirm ![re.test 'foo ' 'b']
+
+    set re [regcomp '\nfoo']
+    affirm [re.test 'bar\nfoo']
+    affirm [re.test 'bar\nfoo' 'b'] /* only affects the ^ anchor. */
+    affirm ![re.test foo]
+
+    set re [regcomp '(...)(©{2,})(.{3})' i]
+    affirm ![re.test 'abc©def']
+    affirm [re.test 'abc©©©def']
+    decl m [re.exec '!!!aBc©©©dEf!!!']
+    affirm [info is-list $m]
+    affirm 4 == [m.length]
+    affirm aBc©©©dEf == m.0
+    affirm aBc == m.1
+    affirm ©©© == m.2
+    affirm dEf == m.3
+}
+
+eval -scope {
+    decl re
+    set re [regcomp '((HI)+)' i]
+    affirm [info is-string re.flags]
+    affirm 0 <= [re.flags.index-of i]
+    affirm true == [re.test hi]
+    affirm true == [re.test byehi]
+
+    decl m
+    set m [re.exec hohihum]
+    affirm [info is-list $m]
+    affirm hi == m.0
+    affirm hi == m.1
+    affirm hi == m.2
+    set m [re.exec hohihihihum]
+    affirm hihihi == m.0
+    affirm hihihi == m.1
+    # Aha: .*((HI)+) matches differently, apparently because the .*
+    # is(?) greedily slurping the first instances of 'hi'.
+    affirm hi == m.2
+
+    set re [regcomp '((hi)+)' i]
+    # contrast that with escaping of "basic" regexes:
+
+    set m [re.exec hoHIhIho]
+    affirm HIhI == m.0
+    affirm HIhI == m.1
+    affirm hI == m.2
+
+    set m [re.exec hoHIhiHIho]
+    affirm HIhiHI == m.0
+    affirm HIhiHI == m.1
+    affirm HI == m.2
+
+    set m [re.exec yo]
+    affirm false == $m
+
+    #m = re.exec('yo', 0/*flags*/, 20/*offset*/);
+    #affirm undefined === m /* undefined b/c out of string range. */;
+
+    set re [regcomp hi]
+    affirm [re.test yohiyo]; # /* oh, we don't need the .* before/after */
+    set m [re.exec yohiyo]
+    affirm 1 == [m.length]
+    affirm hi == m.0
+
+    affirm ho == [[regcomp '(h[aou])'].exec 'hiho'].1
+
+
+    set re [regcomp 'foo[\n]']
+    affirm [re.test 'foo\n']
+    set re [regcomp 'foo.' n]
+    affirm ![re.test 'foo\n']
+
+    set re [regcomp '(\n\n)']
+    set m [re.exec 'a\n\nb']
+    affirm '\n\n' == m.1;
+    
+    decl pattern ".*(la).*"
+    decl input lalala
+    set re [regcomp $pattern i]
+    affirm true == [re.test LaLA]
+    affirm false == [re.test nalona]
+    set input 'flame game'
+    set m [re.exec $input]
+    affirm [info is-list $m]
+    affirm 2 == [m.length];
+    affirm $input == m.0
+    affirm la == m.1
+    affirm true == [re.test lA]
+}
+
+eval -scope {
+    # matchAll() added 20191208...
+    decl re [regcomp '[a-z]+']
+    decl m [re.match-all 'ABC DEF']
+    affirm !$m
+    set m [re.match-all 'abc DEF ghi']
+    affirm [info is-list $m]
+    affirm 2 == [m.length]
+    affirm abc == m.0
+    affirm ghi == m.1
+
+    set re [regcomp '((hi)+)' i]
+    # ^^^ captures should have no effect on the results, other than
+    # to slow down the matching process.
+    set m [re.match-all "hiHI hibye HIhi"]
+    affirm [info is-list $m]
+    affirm 3 == [m.length]
+    affirm hiHI == m.0
+    affirm hi == m.1
+    affirm HIhi == m.2
+}
+
+eval -scope {
+    /**
+       matchAll(pattern, bool captureAll)
+       matchAll(pattern, int flags, bool captureAll)
+    
+       Added 20191219...
+
+       If captureAll is true, the result is false if there
+       are no matches, else it's an array of arrays
+       of matches, with each sub-array having the same structure
+       as the results of exec().
+    */
+    decl re [regcomp '(a+b+)(c+d+)' i]
+    decl m [re.match-all -capture "aaabbbcd AbCd"]
+    affirm [info is-list $m]
+    affirm aaabbbcd == m[0].0
+    affirm aaabbb == m[0].1
+    affirm cd == m[0].2
+    affirm AbCd == m[1].0
+    affirm Ab == m[1].1
+    affirm Cd == m[1].2
+    affirm false == [re.match-all -capture zzz]
+    affirm [info is-list [re.match-all -capture "abcd" 0].0]
+    affirm [info is-string [re.match-all "abcd" 0].0]
+}
+
+eval -scope {
+    /**
+       replace(string input, mixed replacement
+               [int maxReplacements=0 [, int matchFlags=0]]);
+
+       Added 20200130.
+    */
+    decl re [regcomp '[a-z]+']
+    affirm [re.replace ' abc 123 def ' 'xxx'] == ' xxx 123 xxx '
+    affirm CWAL_RC_MISUSE == [[catch {re.replace}].code-string]
+    affirm CWAL_RC_MISUSE == [[catch {re.replace 1 2}].code-string]
+    affirm CWAL_RC_MISUSE == [[catch {re.replace '' '' 3 4 5}].code-string]
+    affirm [re.replace 'abc def' 'xyz' 1] == 'xyz def'
+    affirm [re.replace 'abc def' ''] == ' '
+    affirm [re.replace '123 456' ''] == '123 456'
+    affirm [re.replace ' abc 1a2b3 def ' [proc {s} {return [s to-upper]}]] \
+        == ' ABC 1A2B3 DEF '
+    affirm [re.replace ' abc 1a2b3 def ' [proc {} {return ''}]] \
+           == '  123  '
+
+    affirm [re.replace 'a' [array 1]] == "[1]"
+    affirm CWAL_RC_CYCLES_DETECTED \
+        == [[catch {re.replace 'a' [eval {
+            decl o object
+            set o.o $o
+        }]}].code-string]
+
+    set re [regcomp '[ \t]*([a-z]+)[ \t]*(;)?' ]
+    affirm 'A;B;C' == [re.replace  'a\t  ;\tb; c' [proc {p} {
+        decl m [this.exec $p]
+        if {m.2} {return [[m.1.to-upper].concat m.2]}
+        return [m.1.to-upper]
+    }]]
+
+    set re [regcomp '[a-z]']
+    affirm [re.replace '!abcdef' x 3] == '!xxxdef'
+
+    set re [regcomp '[a-z]([a-z]+)']
+    affirm 'bc e hi k' == [re.replace 'abc de ghi jk'
+                           [proc {} {return _[1]}] _]
+    affirm 'bc e hi k' == [re.replace 'abc de ghi jk'
+                           {eval _.1} '_E']
+
+    set re [regcomp '[ \t]*([a-z]+)[ \t]*(;)?' i]
+
+    affirm 'A;B;C' == [re.replace 'a\t  ;\tb; c'
+                       {
+                           decl x
+                           if {_.2} {
+                               set x [[_.1.to-upper].concat _.2]
+                           } else {
+                               set x [_.1.to-upper]
+                           }
+                           eval $x
+                       } '_E']
+    affirm 'a;b;c' == [re.replace  'A\t  ;\tB; C'
+                       [proc {} { return [[_.1.to-lower].concat (_.2 || '')]}]
+                       _E]
+}
+
+eval -scope {
+    /**
+       split(input [, limit=0 [,matchFlags=0]])
+       Added 20200130.
+    */
+    decl re [regcomp ' *; *']
+
+    affirm CWAL_RC_MISUSE == [[catch {re.split 0/*non-string*/}].code-string];
+    
+    decl m [re.split 'a ;  b; c']
+    affirm 3 == [m.length]
+    affirm a == m.0
+    affirm b == m.1
+    affirm c == m.2
+
+    set m [re.split ' ; a;  b ; c' 3]
+    affirm 3 == [m.length]
+    affirm '' == m.0
+    affirm a == m.1
+    affirm b == m.2
+
+    set m [re split ';']
+    affirm 2 == [m.length]
+    affirm '' == m.0
+    affirm '' == m.1
+
+    set m [re.split ';' 1]
+    affirm 1 == [m.length]
+    affirm '' == m.0
+
+    set m [re.split '']
+    affirm 1 == [m.length]
+    affirm '' == m.0
+
+    set m [re.split ' ']
+    affirm 1 == [m.length];
+    affirm ' ' == m.0
+
+    set m [[regcomp '.'].split 'abc']
+    affirm 4 == [m.length]
+    foreach v $m {affirm '' == $v}
+
+    if {0} {
+        /**
+           Reminder to self: this failure is not a bug: Firefox's JS
+           engine gives the same answer.
+        */
+        set m [[regcomp 'c$'].split 'abc\ndef']
+        #print(__FLC,m); // ==> "abc\ndef"
+        affirm 2 == [m.length];
+        affirm "ab" == m.1
+        affirm "\ndef" == m.2
+    }
+
+    /* 2020-03-01... */
+    set m [[regcomp " *"].split "a || b c "]
+        /* Firefox and mujs both agree that this regex
+           really should split thusly... */
+    affirm 6 == [m.length]
+    affirm 'a' == m.0; affirm '|' == m.1
+    affirm '|' == m.2; affirm 'b' == m.3;
+    affirm 'c' == m.4; affirm '' == m.5;
+}
+
+eval -scope {
+    /**
+       2020-02-13: added each-match
+    */
+    decl re [regcomp '[a-z]+']
+    decl -const a array
+    re each-match \
+        'abc def ghi' \
+        [proc {} {
+            affirm this == $re
+            affirm [info is-local _]
+            a push _.0
+        } using {a $a re $re}] _
+    
+    affirm 3 == [a.length]
+    affirm 'abc' == a.0
+    affirm 'def' == a.1
+    affirm 'ghi' == a.2
+
+    a length 0
+    re each-match 'xyz pqr lmn' \
+        [proc -xsym {m}{
+             affirm this == $re
+            affirm ![info is-local _]
+            a push $m
+        }]
+    affirm 3 == [a length]
+    affirm 'xyz' == a.0
+    affirm 'pqr' == a.1
+    affirm 'lmn' == a.2
+
+    a length 0
+    set re [regcomp '([a-z])([a-z])']
+    re each-match 'lm no pq ' \
+        [proc {} {
+                 affirm this == $r
+                 affirm [info is-local _]
+                 a push [_.1.concat _.2]
+             } using {a $a r $re}] '$'
+    affirm 3 == [a length]
+    affirm 'lm' == a.0
+    affirm 'no' == a.1
+    affirm 'pq' == a.2
+
+    a length 0
+    re each-match 'no pq lm' [proc -xsym {} {
+        affirm this == $re
+        affirm [info is-local _]
+        a push [_.1.concat _.2]
+    }] _
+    affirm 3 == [a length];
+    affirm 'no' == a.0
+    affirm 'pq' == a.1
+    affirm 'lm' == a.2
+
+    a length 0
+    re each-match 'no pq lm' [new whcl.Script {{{
+        affirm this == $re
+        affirm [info is-local _]
+        a push [_.1.concat _.2]
+    }}}] _
+    affirm 3 == [a length];
+    affirm 'no' == a.0
+    affirm 'pq' == a.1
+    affirm 'lm' == a.2
+}
+
+decl S "".__prototype
+if {S.split} {
+    decl -const M S.split
+    set S.split proc proxy {/*pattern, limit*/} {
+        if {[info is-native argv.0] && argv[0][__prototype] == $P} {
+            return [argv[0].split this (argv.1 || -1)]
+        } else {
+            return [X.apply this $argv]
+        }
+    } using -scope {
+        decl -const P regcomp.instance-prototype
+        decl -const X $M
+    }
+    decl m ["a;b;c".split [regcomp " *; *"]]
+    assert 3 == [m.length]
+    assert 'c' == m.2
+
+    set m ["A;B;C".split ";"]
+    assert 3 == [m.length]
+    assert 'C' == m.2
+    set S.split $M
+}
+
+if {S.replace} {
+    decl -const M S.replace
+    set S.replace proc {/*needle, replacement*/} {
+        if {[info is-native argv.0] && argv[0][__prototype] == $P} {
+            return [argv[0].replace this argv.1]
+        } else {
+            return [X.apply this $argv]
+        }
+    } using -scope {
+        decl -const P regcomp.instance-prototype
+        decl -const X $M
+    }
+    # Replace via regex:
+    assert abc == ["AbC".replace [regcomp '[A-Z]'] [proc {x} {return [x.to-lower]}]]
+    # Replace via string:
+    assert abc == ["Abc".replace A a]
+    set S.replace $M
+}

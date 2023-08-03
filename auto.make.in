@@ -1,0 +1,144 @@
+#!/hey/emacs/this/is/make
+all:
+########################################################################
+# auto.make.in gets filtered by the configure process to create
+# auto.make, which should be included by interested third parties.
+#
+# This particular auto.make (the one in the top-most source dir) gets
+# included by sub-dir makefiles, so it must be devoid of any Make code
+# which applies only to the top-most directory.
+ifeq (,$(CWAL/AUTO.MAKE-INCLUDED))
+# ^^^ multiple-inclusion guard because of how s2 modules may
+# autonomously include this file.
+CWAL/AUTO.MAKE-INCLUDED := 1
+all:
+
+auto.make.cwal := $(word $(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST))
+SHELL := @BIN_BASH@
+
+CC := @CC@
+CXX := @CXX@
+CFLAGS += @CFLAGS@ @CC_PROFILE_FLAG@
+CFLAGS += -Wno-error=unused-parameter
+CPPFLAGS += @CPPFLAGS@
+ifneq (1,@CWAL_OBASE_ISA_HASH@)
+  CPPFLAGS += -DCWAL_OBASE_ISA_HASH=@CWAL_OBASE_ISA_HASH@
+endif
+CXXFLAGS += @CXXFLAGS@
+LDFLAGS += @LDFLAGS@ @CC_PROFILE_FLAG@
+AUTOCONFIG_H := @AUTOCONFIG_H@
+ENABLE_CXX := @ENABLE_CXX@
+CWAL_BUILD_SHARED_LIBS ?= @BUILD_SHARED_LIBS@
+
+SHOBJ_CFLAGS ?= @SHOBJ_CFLAGS@
+SHOBJ_LDFLAGS ?= @SHOBJ_LDFLAGS@
+SHOBJ_LDFLAGS_R ?= @SHOBJ_LDFLAGS_R@
+SH_CFLAGS ?= @SH_CFLAGS@
+SH_LDFLAGS ?= @SH_LDFLAGS@
+SH_LINKFLAGS ?= @SH_LINKFLAGS@
+SH_LINKRPATH ?= @SH_LINKRPATH@
+SH_SOEXT ?= @SH_SOEXT@
+SH_SOEXTVER ?= @SH_SOEXTVER@
+SH_SOPREFIX ?= @SH_SOPREFIX@
+LDFLAGS_MODULE_LOADER ?= @LDFLAGS_MODULE_LOADER@
+
+HAVE_REGCOMP ?= @HAVE_REGCOMP@
+
+ShakeNMake.QUIET := @BUILD_QUIETLY@
+
+# CC_CAN_STDC99: whether flag -std=c99 works.
+# CC_CAN_STDC99 ?= @CC_CAN_STDC99@
+
+HAVE_POPEN := @HAVE_POPEN@
+HAVE_FORK := @HAVE_FORK@
+
+########################################################################
+# Some common vars used by shakenmake.make and/or the sub-makes
+# (make-*.make).
+DIR.top := @srcdir@
+DIR.top-abs := $(abspath $(dir $(word $(words $(MAKEFILE_LIST)), $(MAKEFILE_LIST))))
+DIR.src := $(DIR.top)/src
+DIR.tools := $(DIR.top)/tools
+DIR.s2 := $(DIR.top)/s2
+DIR.include := $(DIR.top)/include
+DIR.inccwal := $(DIR.top)/include/wh/cwal
+DIR.doc := $(DIR.top)/doc
+DIR.t10n := $(DIR.top)/t10n
+
+PROJECT_INCLUDES := -I$(DIR.include) -I$(DIR.include)/wh -I$(DIR.include)/wh/cwal
+CPPFLAGS += -DHAVE_AUTOCONFIG_H
+
+BIN.FOSSIL ?= @BIN_FOSSIL@
+BIN.DOXYGEN ?= @BIN_DOXYGEN@
+
+DISTCLEAN.root += $(wildcard auto.make)
+CLEAN.root += $(wildcard *~)
+
+SQLITE3_ORIGIN := @SQLITE3_ORIGIN@
+SQLITE3_CPPFLAGS := @SQLITE3_CPPFLAGS@
+SQLITE3_LDFLAGS := @SQLITE3_LDFLAGS@
+SQLITE3.C := @SQLITE3.C@
+
+########################################################################
+# Set ENABLE_DEBUG to 1 to enable cwal/s2 debugging information.
+ENABLE_DEBUG := @ENABLE_DEBUG@
+ENABLE_SPEED_OPTIMIZATIONS ?= 0
+ENABLE_SIZE_OPTIMIZATIONS ?= 0
+ifeq (1,$(ENABLE_DEBUG))
+  CPPFLAGS += -DDEBUG=1
+# -UNDEBUG
+  CFLAGS += -O0
+  CXXFLAGS += -O0
+else
+  CPPFLAGS+=-DNDEBUG
+  ifeq (1,$(ENABLE_SPEED_OPTIMIZATIONS))
+    CFLAGS += -O3
+    CXXFLAGS += -O3
+  else ifeq (1,$(ENABLE_SIZE_OPTIMIZATIONS))
+    CFLAGS += -Os
+    CXXFLAGS += -Os
+  else
+    CFLAGS += -O2
+    CXXFLAGS += -O2
+  endif
+endif
+# /ENABLE_DEBUG
+########################################################################
+
+########################################################################
+# Utilities for converting s2 scripts to C byte arrays so that they
+# can be compiled in to C...
+
+############################################################
+# $(stripcomments.bin) strips C- and C++-style comments...
+stripcomments.bin := $(DIR.tools)/stripcomments
+$(stripcomments.bin):
+	$(MAKE) -C $(dir $(stripcomments.bin)) stripcomments
+CLEAN.root += $(stripcomments.bin)
+
+############################################################
+# $(tochararray.bin) converts its input into a C byte array
+# and a few C symbols for working with it.
+tochararray.bin := $(DIR.tools)/tochararray
+$(tochararray.bin):
+	$(MAKE) -C $(dir $(tochararray.bin)) tochararray
+CLEAN.root += $(tochararray.bin)
+
+########################################################################
+# Automatic reconfigure...
+# Reminder: 'cd' is necessary to avoid autosetup writing its output
+# relative to _this_ directory.
+# https://github.com/msteveb/autosetup/issues/42
+#AUTOREMAKE := cd $(TOP_SRCDIR); @AUTOREMAKE@
+#AUTODEPS := @AUTODEPS@
+
+#$(AUTODEPS):
+#$(auto.make.cwal): $(auto.make.cwal).in $(AUTODEPS)
+#	$(AUTOREMAKE)
+#	touch $@ # because autosetup won't touch it if it hasn't changed.
+# But that causes 'reconfig' to reconfigure it 2-3 times in a row :/.
+#.PHONY: reconfig
+#reconfig: ; $(AUTOREMAKE)
+endif
+# CWAL/AUTO.MAKE-INCLUDED
+########################################################################

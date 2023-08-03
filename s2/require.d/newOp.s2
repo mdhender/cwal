@@ -1,0 +1,70 @@
+/**
+  require.s2 module demonstrating an almost-JS-like 'new' operator,
+  implemented as a script-side function...
+*/
+
+/**
+  Expects Klass an Object with a "constructor" Function property or to
+  be a Function which acts as a constructor. This function does the
+  following:
+
+  - Creates a new Object
+
+  - Sets its prototype to Klass
+
+  - apply()s the constructor function (Klass.constructor or Klass) to
+  the new object. The 2nd and subsequent arguments passed to this
+  function are passed on as the arguments to the constructor. Note
+  that the return value of the constructor is ignored - this routine
+  always...
+
+  - returns the new object.
+
+  All exceptions are propagated.
+
+  In addition:
+
+  If Klass.prototype.constructor is callable then a function symbol
+  called super is defined for the duration of the constructor call,
+  which applies Klass.prototype.constructor to the new object,
+  effectively forwarding the constructor call. If
+  Klass.prototype.constructor is not callable then super is undefined.
+*/
+const noo = proc(Klass, …){
+    affirm Klass;
+    var ctor;
+    if(typeinfo(iscallable Klass.constructor)){
+        ctor = Klass.constructor;
+    }else if(typeinfo(iscallable Klass)){
+        ctor = Klass;
+    }else{
+        throw "noo() requires a Function or an Object parameter with a 'constructor' Function property.";
+    }
+    const rc = {
+        prototype: argv.shift() // === Klass
+    };
+    // optionally define a super() pseudo-method, callable from the
+    // ctor, which forwards the arguments to the parent ctor
+    // but with the derived 'this':
+    (Klass.prototype && typeinfo(iscallable Klass.prototype.constructor))
+    ? const super = proc(){
+        proxy.apply(that, argv);
+      } using{that: rc, proxy: Klass.prototype.constructor}
+    : 0;
+    ctor.apply(rc, argv);
+    return rc;
+};
+/**
+   Intended to be passed a "class" suitable for use as the first
+   parameter to noo(), it returns a Function which proxies
+   noo(Klass,...), passing on all arguments as the 2nd and subsequent
+   arguments to noo().
+*/
+noo.createNooMethod = proc(Klass){
+    return proc(){
+        argv.unshift(parentClass);
+        return newOp.apply(newOp, argv);
+    } using {parentClass: Klass, newOp: this}
+};
+
+return noo;

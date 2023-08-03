@@ -1,0 +1,145 @@
+/**
+   Brief demo of the porex (POSIX regex) module.
+*/
+
+// Utility to list properties of a value.
+const vls = proc(v,label) using(print){
+    label && print(label);
+    if(typeinfo(iscontainer v)){
+        foreach(v=>k,v) print('  ',typeinfo(name k), k, '=', typeinfo(name v), v);
+    }
+};
+
+// The module only has one function: compile(), analog to regcomp(3):
+const regcomp = (s2.regex?s2.regex.posix:0) ||| s2.loadModule('regex_posix.so');
+affirm typeinfo(isfunction regcomp);
+affirm 'posix' === regcomp.flavor;
+import('test_rx_common.s2');
+
+//vls(regcomp,"regcomp properties:");
+
+var re, m;
+
+affirm 'ho' === regcomp('\(h[aou]\)', 'B').exec('hiho').1
+/* reminder to self: double-escaping the parens is not necessary since
+   20160211, as s2 no longer strips backslashes for unknown (to it)
+   escape sequences (see s2_unescape_string() for the specifics). We'd
+   possibly (depending on the pattern) still need to double-escape
+   special characters like \n and \t.
+*/;
+
+
+/* NOTEOL says to not treat the end of the pattern string as an EOL for purposes
+   of the $ specifier... */
+re = regcomp('foo$', 'n'/*==>regcomp.NEWLINE*/);
+affirm re.test(' foo');
+affirm !re.test('foo ');
+affirm re.test('bar\nfoo');
+affirm !re.test('bar\nfoo', 'e'/*==>re.test.NOTEOL*/);
+affirm re.test('foo\nfoo', 'e'/*==>re.test.NOTEOL*/) /* matches first foo because of the NEWLINE flag */;
+
+
+re = regcomp('a(b)(c)', 's'/*==>regcomp.NOSUB*/ );
+//print(__FLC,"About to NOSUB exec:",re.pattern);
+m = re.exec('abc');
+//print(__FLC,"NOSUB exec'd:",re.pattern, m);
+affirm true===m /* with the NOSUB flag we don't know the position of a match,
+                   so cannot return a list containing the whole match. Thus
+                   we return a boolean in that case. */;
+re = regcomp(re.pattern );
+m = re.exec('abc');
+affirm typeinfo(islist m);
+affirm 'abc' === m.0;
+affirm 'b' === m.1;
+affirm 'c' === m.2;
+
+re = regcomp('abc', 's'/*==>regcomp.NOSUB*/ );
+//print(__FLC,"About to NOSUB exec:",re.pattern);
+m = re.exec('  abc');
+//print(__FLC,"NOSUB exec'd:",re.pattern, m);
+affirm true===m /* again, NOSUB can't return position information, so we can't return ["abc"]. */;
+affirm false === re.exec('cde');
+re = m = undefined;
+
+
+if(1){
+    // if it's configured to throw for too many matches...
+    affirm 'CWAL_RC_RANGE' === catch{
+        re = regcomp('(1)(2)(3)(4)(5)(6)(7)(8)(9)(10)'
+                     /*10 sub-captures, but internal limit is 10, including $0*/);
+        m = re.exec('1234567891011');
+    }.codeString();
+}else{
+    // If it's configured to silently ignore extra captures... 
+    re = regcomp('(1)(2)(3)(4)(5)(6)(7)(8)(9)(10)'/*11 w/ $0*/);
+    m = re.exec('1234567891011');
+    affirm typeinfo(islist m);
+    affirm 10 === m.#;
+    affirm '12345678910' === m.0;
+    affirm '9' === m.9;
+}
+
+
+scope {
+    /**
+       POSIX-specific matchAll() tests.
+
+       Curiously, the POSIX API does not report capture information,
+       *not even for the full-match result*, if a regex is compiled
+       with the NOSUB flag.
+
+       matchAll() cannot work when a regex is compiled with NOSUB because
+       POSIX regexec() cannot report the position of a match in that case,
+       and we need the start/end positions in order to locate the match
+       substrings.
+    */
+    var re = regcomp('[a-z]+','s');
+    const ex = catch re.matchAll("x");
+    affirm typeinfo(isexception ex);
+    affirm 0 < ex.message.indexOf("NOSUB");
+    affirm catch{regcomp('a', 's').matchAll('a')}.message.indexOf('NOSUB')>0;
+    affirm catch{regcomp('a', 's').matchAll('a',true)}.message.indexOf('NOSUB')>0;
+}    
+
+scope {
+    /**
+       POSIX-specific replace() tests.
+    */
+    // replace() doesn't work together with NOSUB, for the same reason
+    // matchAll() can't (apparent limitation of the POSIX API).
+    var x = regcomp('[a-z]+', 's');
+    affirm 0 < catch x.replace('x','').message.indexOf('NOSUB');
+    x = regcomp('[ \t]*([a-z]+)[ \t]*(;)?');
+    affirm 'A;B;C' ===
+        x.replace(
+            'a\t  ;\tb; c',
+            eval=>{
+                $.2 ? $.1.toUpper()+$.2 : $.1.toUpper()
+            },
+            '$E' );
+}
+
+scope {
+    /**
+       POSIX-specific split() tests.
+    */
+    // split() doesn't work together with NOSUB, for the same reason
+    // matchAll() can't (apparent limitation of the POSIX API).
+    var x = regcomp('a', 's');
+    affirm 0 < catch x.split('').message.indexOf('NOSUB');
+    affirm regcomp('^a').test('abc');
+    m = regcomp('^a').split('abc');
+    affirm 2 === m.#;
+    affirm "" === m.0;
+    affirm "bc" === m.1;
+    m = regcomp('^a').split('abc', 'b');
+    affirm 1 === m.#;
+    affirm "abc" === m.0;
+}
+
+scope {
+    /** POSIX-specific eachMatch() tests. */
+    var r = regcomp('.', 's');
+    affirm 0 < catch r.eachMatch('a','').message.indexOf('NOSUB')
+    /* Yet another algo which POSIX NOSUB cannot participate in. */;
+}

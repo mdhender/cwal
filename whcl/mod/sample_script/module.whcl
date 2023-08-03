@@ -1,0 +1,12 @@
+# Demo of a whcl loadable module implemented as a script.
+decl -const m object -scope {
+    decl x 1
+    proc foo {} {
+        echo __FLC "foo()"
+    }
+    proc bar {} {
+        echo __FLC "bar()"
+    }
+}
+
+return $m

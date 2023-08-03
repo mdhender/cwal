@@ -1,0 +1,45 @@
+/* Short demo of the pubsub require.s2 module. */
+return s2.import('../require.d/require.s2')(
+    ['tmpl' // bug: reading a directory (by accident) is reported as OOM
+    ],
+    proc(t){
+        if(0){
+            var tc = t.load('tmpl-demo.tmpl',true);
+            print(__FLC);
+            eval -> tc;
+            return;
+        }
+
+        var ex = catch{
+            t.processFile('x', {
+                a:'hi',
+                b:'there',
+                c:'world'
+            });
+        };
+        if(ex){
+            print(ex.code, ex.codeString(), ex.message);
+            affirm ex.message.indexOf('search path')>0
+            /* file not found - that's okay for this test. */
+            ;
+        }
+
+        return;
+        const src = 'a=<% a %>, b=<%b%>, c=<%c%>\n';
+        t.process(src,{
+            a:'hi',
+            b:'there',
+            c:'world'
+        });
+
+        const compiled = t.compile(src);
+        var opt = {
+            a:-1,
+            b:0,
+            c:1
+        };
+        for(var i = 0; i < 5; ++i, ++opt.a, ++opt.b, ++opt.c ){
+            t.process(compiled, opt, src);
+        }
+    }
+);

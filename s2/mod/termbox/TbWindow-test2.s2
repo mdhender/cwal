@@ -1,0 +1,71 @@
+const tb = s2.import('tb-bootstrap.s2');
+affirm tb.requireS2;
+const ex = catch
+tb.requireS2(['TbWindow', 'termbox/Marquee'],
+proc(TW, Marquee) using(tb){
+
+    //TW.present.useBuffer = false;
+
+    const tbW = tb.width(true/*init tb*/), tbH = tb.height();
+
+    const wToStr = proc(w){
+        const g = w.geometry();
+        return "%1$p %2$dx%3$d @ %4$d,%5$d,%6$d".
+            applyFormat(w.cells, g.w, g.h, g.x, g.y, g.z);
+    };
+
+    const wait = proc(){
+        marquee.tick().tick().tick();
+        TW.present();
+        tb.poll();
+    };
+
+    const wLabel = proc(){
+        this.print3(0, this.height()-1, wToStr(this),'\n');
+    } using(wToStr);
+    
+    const w = new TW(tbW/2, tbH/3,
+                     2, 4);//tbW/2, tbH/2);
+    affirm typeinfo(isfunction w.boxIn);
+    w
+        .attr(tb.color.white | tb.attr.bold,
+              tb.color.blue)
+        .clear()
+        .print3(0,0, w.geometry())
+        .listen(w.Events.blit, wLabel)
+    ;
+
+    const marquee = new Marquee(w, 0, 2, 10);
+    marquee.setMessage("A marquee!");
+    
+    
+    wait();
+    
+    const w2 = new TW(tbW/2, tbH/3,
+                      tbW/3, tbH/3, 1);
+    w2
+        .attr(tb.color.green | tb.attr.bold,
+              tb.color.black)
+        .clear()
+        .listen(w.Events.blit, wLabel)
+    ;
+
+    const w2b = new TW(w2, w2.width()-4, w2.height()/2, 2, 1)
+          .attr( tb.color.yellow | tb.attr.bold,
+                 tb.color.cyan )
+          .clear()
+          .listen(w.Events.blit, wLabel)
+    ;
+    wait();
+
+    w2.moveBy(-2,-2).zLevel(-1);
+    
+    wait();
+
+    w2.zLevel(1);
+    
+    wait();
+});
+
+tb.width()>=0 && tb.shutdown();
+ex && throw ex;

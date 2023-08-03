@@ -1,0 +1,63 @@
+const ob = s2.ob;
+const pushExtra = 1;
+const origOBLevel = ob.level();
+pushExtra && ob.push();
+
+/*
+  In order to generate HTTP-compatible output, cgi must buffer
+  all output. It does this using the s2_ob (output buffering) API.
+  This means that it can capture output sent to cwal_engine_output(),
+  i.e. all (properly) script-generated output. HOWEVER, in order to do
+  that we need to ensure that at least 1 buffer layer is in place (beyond
+  the one we pushed above, which exists to capture all of the CGI output,
+  including the headers).
+
+  The CGI module rembers the init()-time ob.level() and assumes that
+  it may manage all levels pushed after that, in terms of flushing
+  their output and eventually popping them if script code fails to do
+  so.
+*/
+const cgi = (s2.cgi ||| s2.loadModule('cgi.so')).init({
+    //pushOb: false/*default=true*/,
+    importEnv: true/*default=false*/
+});
+affirm cgi;
+affirm ob.level() > (origOBLevel + (pushExtra ? 1 : 0));
+
+cgi.setContentType("will be replaced");
+cgi.httpStatus(837,"Optional comment");
+const Headers = enum {
+    XLastGrognified: "X-Last-Grognified"
+};
+cgi.setHeader('CONTENT-TYPE', 'text/plain');
+cgi.setHeader(Headers.XLastGrognified, cgi.headerTimestamp());
+const bodyText = "This is the body.\n";
+cgi << bodyText;
+
+cgi.respond() /* this cleans up all native state, so further calls to
+                 cgi member functions will throw. */;
+
+affirm ob.level() === (pushExtra ? 1 : 0);
+var b = pushExtra ? ob.pop(-1) : undefined;
+affirm 0 === ob.level();
+affirm pushExtra ? typeinfo(isstring b) : true;
+if(b){
+    const out = s2.io.output;
+    print("Captured",b.#,'bytes of response output:');
+    out(b);
+    affirm b.indexOf("Status: 837 Optional comment")>=0;
+    // Headers added via setHeader() are, as of 20181106, internally
+    // normalized to lower case:
+    affirm b.indexOf("content-type: text/plain") > 0;
+    affirm s2.glob("*x-last-grognified: [SMTWF]*", b);
+    affirm b.indexOf(bodyText) > 0;
+    if(0){
+        const splitPos = b.indexOf("\r\n\r\n");
+        affirm splitPos > 0;
+        const body = b.substr(splitPos+4),
+              head = b.substr(0,splitPos);
+        affirm bodyText === body;
+        out("BODY:\n",body);
+        out("HEADERS:\n",head,"\n^^^ (one NL added)\n");
+    }
+}

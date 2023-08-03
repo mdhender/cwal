@@ -1,0 +1,135 @@
+/**
+   Returns a utility class intended to act as a base class for
+   higher-level widgets or utilities which process key events.
+*/
+return requireS2(['termbox/EventProcessor'], proc(EventProcessor){
+    return {
+        prototype: EventProcessor,
+
+        /**
+            Given a termbox Pad and Window instance, this object
+            acts as a proxy for scrolling the pad within the Window's
+            view. The pad may be arbitrarily large. viewWin is assumed
+            to fit on the screen.
+        */
+        __new: proc(pad,viewWin){
+            affirm this.tb; // via the prototype
+            affirm viewWin inherits this.tb.Window;
+            affirm pad inherits this.tb.Pad;
+            this.view = viewWin;
+            this.pad = pad;
+            this.xoff = this.yoff = 0;
+            this.vw = viewWin.width();
+            this.vh = viewWin.height();
+            this.pw = this.pad.width();
+            this.ph = this.pad.height();
+            this.pageHeight = this.vh-2;
+            this.pageWidth = this.vw-2;
+            affirm typeinfo(ishash this.keyMap);
+            affirm typeinfo(ishash this.keyMap.mod);
+            viewWin.boxIn();
+        },
+
+        /**
+            Draws the pad's contents, adjusted for the current scroll
+            position, to the view window and present()s that window.
+            If the window is a subwindow, present() might not suffice:
+            the client may need to call the present() method of the
+            parent window or the termbox module (reachable via
+            thisObject.tb).
+        */
+        present:proc(){
+            this.pad.drawTo( this.view, this.xoff, this.yoff,
+                             1, 1, this.vw-2, this.vh-2 );
+            
+            this.ph>this.vh && this.view.drawScrollbarV(this.vw-1, 1, this.vh-2,
+                                         this.ph, this.yoff);
+            this.pw>this.vw && this.view.drawScrollbarH(this.vw/2, this.vh-1, this.vw/2-1,
+                                         this.pw, this.xoff);
+
+            this.view.present();
+            return this;
+        },
+
+        /**
+           Adjusts the visible portion of this.pad by x/y and present()s
+           this.view.
+        */
+        bump: proc(x,y){
+            if(typeinfo(isinteger x)){
+                if( (this.xoff += x) >= this.pw-this.vw+2 ){
+                    this.xoff = this.pw-this.vw+2;
+                }
+                else if(this.xoff < 0) this.xoff = 0;
+            }
+            if(typeinfo(isinteger y)){
+                if( (this.yoff += y) >= this.ph-this.vh+2 ){
+                    this.yoff = this.ph-this.vh+2;
+                }
+                else if(this.yoff < 0) this.yoff = 0;
+            }
+            this.view.print3(1,0,'@',this.xoff,',',this.yoff,'    ');
+            return this.present();
+        },
+
+        center: proc(){
+            this.xoff = this.pw/2 - (this.pageWidth / 2);
+            this.yoff = this.ph/2 - (this.pageWidth / 2);
+            return this.bump(0,0);
+        },
+
+        scrollTo: proc(x,y){
+            this.xoff = x;
+            this.yoff = y;
+            return this.bump(0,0);
+        }
+
+    }.withThis(proc(){
+        this.keyMap = {
+#// placement is an emacs indentation kludge
+            'ARROW_UP': proc(self,e){
+                self.bump(0,e.mod ? -self.pageHeight/2 : -1);
+            },
+            'ARROW_DOWN': proc(self,e){
+                self.bump(0,e.mod ? self.pageHeight/2 : 1);
+            },
+            'ARROW_LEFT': proc(self,e){
+                self.bump(e.mod ? -self.pageWidth/2 : -1, 0);
+            },
+            'ARROW_RIGHT': proc(self,e){
+                self.bump(e.mod ? self.pageWidth/2 : 1, 0);
+            },
+            'HOME': proc(self){
+                self.xoff = self.yoff = 0;
+                self.bump(0,0);
+            },
+            'END': proc(self){
+                self.xoff = self.pw;
+                self.yoff = self.ph;
+                self.bump(0,0);
+            },
+            'PGUP': proc(self){
+                self.bump(0,-self.pageHeight);
+            },
+            'PGDN': proc(self){
+                self.bump(0,self.pageHeight);
+            },
+            '^X': proc(){
+                return false;
+            }
+        };
+        this.keyMap.mod = {
+            // Mappings for ALT-xxx and ESC-xxx (treated the same by termbox)...
+#// placement is an emacs indentation kludge
+            // WTH!?!? in experiment-list-view.s2 this same mapping works, but
+            // these never resolve in this app!?!?!
+            'PGUP': proc(self){
+                self.bump(-self.pageWidth);
+            },
+            'PGDN': proc(self){
+                self.bump(self.pageWidth);
+            }
+            
+        };
+    });
+});

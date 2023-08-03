@@ -1,0 +1,52 @@
+
+const my = s2.loadModule('sample_cpp.so');
+print(__FLC,"Module member overview:");
+foreach(my=>k,v){
+    print('\t',typename v,k,'=',v);
+};
+
+scope {
+    print(__FLC,"Creating some new my()...");
+    var n1 = new my(),
+      n2 = new my(3),
+      ex = catch new my(1,2,3)
+    /* LOL... when the operand for new is an unknown identifier (typo)
+       then 'catch' catches that and then tries to call() the
+       exeception with new's (...) part unless one wraps (new m(...))
+       in braces or parens. Not quite a bug, but delays the error,
+       confusing the matter.
+     */;
+    assert n1 inherits my;
+    assert n2 inherits my;
+    assert ex;
+    assert ex.message.indexOf('type-list') > 0;
+    assert 3 === n2.value();
+    assert 1 === n1.oload(1);
+    assert -1.2 === n1.oload(1.2);
+    assert 0 === n1.oload(0, 1);
+    assert -1 === n1.oload(-1,0,1);
+
+
+    var n3 = new my(7);
+    n3.destroy() /* finalized the native part and unlinks it from script-space */;
+    assert n3.value /* still inherits the prototype, but... */;
+    ex = catch n3.value() /* no longer has a native pointer part. */;
+    assert ex.message.indexOf("'this'") === 0;
+
+    assert n2 === n2.self();
+    assert n2 === n1.passPtr(n2);
+    assert n2 === n1.passRef(n2);
+    assert 1 === n1.nonMember(1);
+    assert -1 === n1.nonMember2(-1);
+    assert n2.value()*-1 === n2.func1c(-1);
+    assert 'double' === typeinfo(name n1.funcStr("hi"));
+    assert 0 === n1.foo().indexOf("Hello");
+
+    ex = catch new my(0,1) /* 2-arg ctor always throws */;
+    assert ex;
+    assert ex.message.indexOf('threw') > 0;
+    print("Intercepted C++ exception:", ex);
+    print(__FLC,"Subscope ending - watch for dtor calls...");
+}
+print(__FLC,"Subscope done - there should have been a few dtor calls just before this line.");
+return my;

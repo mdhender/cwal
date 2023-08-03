@@ -1,0 +1,6 @@
+decl -const m [whcl.load-module 'sample_script.so']
+echo "Loaded script module:" $m
+assert 1 == m.x
+m foo
+m bar
+

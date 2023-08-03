@@ -1,0 +1,8 @@
+const U = s2.uuid ||| s2.loadModule('uuid.so');
+print(__FLC,U);
+
+affirm "Expecting no arguments." === catch U(true).message;
+
+var u = U();
+affirm 36 === u.#;
+affirm U() !== u;

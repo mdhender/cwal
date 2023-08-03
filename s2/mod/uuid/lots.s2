@@ -1,0 +1,9 @@
+const U = s2.uuid ||| s2.loadModule('uuid.so');
+const cliArgs = s2.ARGV&&s2.ARGV.flags ? s2.ARGV.flags : {prototype:null};
+const count = cliArgs.n;
+if(!count){
+    throw "".concat("Usage: ",__FILE," -- -n=#### ",
+                    "to generate #### UUIDs to s2's default ",
+                    "output channel.");
+}
+for(var i = 0; i < count; ++i) print(U());

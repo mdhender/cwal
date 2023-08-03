@@ -1,0 +1,258 @@
+/* this is refusing to load for reasons beyond my patience
+   to resolve:
+   @import url(highlightjs/hybrid.min.css)
+   so its contents are pasted in below.
+*/
+
+/* Style tweaks which are independent of the current site skin being
+   used by the repository. This file should not attempt any major
+   style surgery, as it may backfire with any given site skin. */
+
+/**start default highlightjs theme **************************/
+pre code.hljs {display: block;overflow-x: auto;padding: 1em;}
+code.hljs {padding: 3px 5px;}
+.hljs {background: #1d1f21; color: #c5c8c6;}
+.hljs span::selection,.hljs::selection {background: #373b41;}
+/*.hljs span::-moz-selection,.hljs::-moz-selection {background: #373b41;}*/
+.hljs-name,.hljs-title {color: #f0c674;}
+.hljs-comment,.hljs-meta,.hljs-meta .hljs-keyword {color: #707880;}
+.hljs-deletion,.hljs-link,.hljs-literal,.hljs-number,.hljs-symbol {color: #c66;}
+.hljs-addition,.hljs-doctag,.hljs-regexp,.hljs-selector-attr,.hljs-selector-pseudo,.hljs-string {color: #b5bd68;}
+.hljs-attribute,.hljs-code,.hljs-selector-id {color: #b294bb;}
+.hljs-bullet,.hljs-keyword,.hljs-selector-tag,.hljs-tag {color: #81a2be;}
+.hljs-subst,.hljs-template-tag,.hljs-template-variable,.hljs-variable {color: #8abeb7;}
+.hljs-built_in,.hljs-quote,.hljs-section,.hljs-selector-class,.hljs-type {color: #de935f;}
+.hljs-emphasis {font-style: italic;}
+.hljs-strong {font-weight: 700;}
+/**end default hilightjs theme ****************************************/
+/* Local customizations... */
+.hljs-comment {color: orangered}
+.hljs-built_in {color: #81a2be}
+.hljs-number {color: #81a2be}
+.hljs-literal {color: #c66}
+.hljs-string {color: #de935f}
+
+/** start light-themed syntax highlighting... ********************/
+/************************************
+body:not(.fossil-dark-style) .hljs{color:#444;background:#f0f0f0;}
+body:not(.fossil-dark-style) .hljs-subst{color:#444;}
+body:not(.fossil-dark-style) .hljs-comment{color:#888;}
+body:not(.fossil-dark-style) .hljs-doctag,
+body:not(.fossil-dark-style) .hljs-keyword,
+body:not(.fossil-dark-style) .hljs-meta .hljs-keyword,
+body:not(.fossil-dark-style) .hljs-name,
+body:not(.fossil-dark-style) .hljs-selector-tag{font-weight:700;}
+body:not(.fossil-dark-style) .hljs-attribute{color:#0e9a00;}
+body:not(.fossil-dark-style) .hljs-function{color:#99069a;}
+body:not(.fossil-dark-style) .hljs-deletion,
+body:not(.fossil-dark-style) .hljs-number,
+body:not(.fossil-dark-style) .hljs-quote,
+body:not(.fossil-dark-style) .hljs-selector-class,
+body:not(.fossil-dark-style) .hljs-selector-id,
+body:not(.fossil-dark-style) .hljs-string,
+body:not(.fossil-dark-style) .hljs-template-tag,
+body:not(.fossil-dark-style) .hljs-type{color:#800;}
+body:not(.fossil-dark-style) .hljs-section,
+body:not(.fossil-dark-style) .hljs-title{color:#800;font-weight:700;}
+body:not(.fossil-dark-style) .hljs-link,
+body:not(.fossil-dark-style) .hljs-regexp,
+body:not(.fossil-dark-style) .hljs-selector-attr,
+body:not(.fossil-dark-style) .hljs-selector-pseudo,
+body:not(.fossil-dark-style) .hljs-symbol,
+body:not(.fossil-dark-style) .hljs-template-variable,
+body:not(.fossil-dark-style) .hljs-variable{color:#bc6060;}
+body:not(.fossil-dark-style) .hljs-literal{color:#78a960;}
+body:not(.fossil-dark-style) .hljs-addition,
+body:not(.fossil-dark-style) .hljs-built_in,
+body:not(.fossil-dark-style) .hljs-bullet,
+body:not(.fossil-dark-style) .hljs-code{color:#0c9a9a;}
+body:not(.fossil-dark-style) .hljs-meta{color:#1f7199;}
+body:not(.fossil-dark-style) .hljs-meta .hljs-string{color:#4d99bf;}
+body:not(.fossil-dark-style) .hljs-emphasis{font-style:italic;}
+body:not(.fossil-dark-style) .hljs-strong{font-weight:700;}
+**********************************/
+
+/**********************************
+body:not(.fossil-dark-style) .hljs {color: #24292e;background: #fff;}
+body:not(.fossil-dark-style) .hljs-doctag,
+body:not(.fossil-dark-style) .hljs-keyword,
+body:not(.fossil-dark-style) .hljs-meta .hljs-keyword,
+body:not(.fossil-dark-style) .hljs-template-tag,
+body:not(.fossil-dark-style) .hljs-template-variable,
+body:not(.fossil-dark-style) .hljs-type,
+body:not(.fossil-dark-style) .hljs-variable.language_ {color: #d73a49;}
+body:not(.fossil-dark-style) .hljs-title,
+body:not(.fossil-dark-style) .hljs-title.class_,
+body:not(.fossil-dark-style) .hljs-title.class_.inherited__,
+body:not(.fossil-dark-style) .hljs-title.function_ {color: #6f42c1;}
+body:not(.fossil-dark-style) .hljs-attr,
+body:not(.fossil-dark-style) .hljs-attribute,
+body:not(.fossil-dark-style) .hljs-literal,
+body:not(.fossil-dark-style) .hljs-meta,
+body:not(.fossil-dark-style) .hljs-number,
+body:not(.fossil-dark-style) .hljs-operator,
+body:not(.fossil-dark-style) .hljs-selector-attr,
+body:not(.fossil-dark-style) .hljs-selector-class,
+body:not(.fossil-dark-style) .hljs-selector-id,
+body:not(.fossil-dark-style) .hljs-variable {color: #005cc5;}
+body:not(.fossil-dark-style) .hljs-meta .hljs-string,
+body:not(.fossil-dark-style) .hljs-regexp,
+body:not(.fossil-dark-style) .hljs-string {color: #032f62;}
+body:not(.fossil-dark-style) .hljs-built_in,
+body:not(.fossil-dark-style) .hljs-symbol {color: #e36209;}
+body:not(.fossil-dark-style) .hljs-code,
+body:not(.fossil-dark-style) .hljs-comment,
+body:not(.fossil-dark-style) .hljs-formula {color: #6a737d;}
+body:not(.fossil-dark-style) .hljs-name,
+body:not(.fossil-dark-style) .hljs-quote,
+body:not(.fossil-dark-style) .hljs-selector-pseudo,
+body:not(.fossil-dark-style) .hljs-selector-tag {color: #22863a;}
+body:not(.fossil-dark-style) .hljs-subst {color: #24292e;}
+body:not(.fossil-dark-style) .hljs-section {color: #005cc5;font-weight: 700;}
+body:not(.fossil-dark-style) .hljs-bullet {color: #735c0f;}
+body:not(.fossil-dark-style) .hljs-emphasis {color: #24292e;font-style: italic;}
+body:not(.fossil-dark-style) .hljs-strong {color: #24292e;font-weight: 700;}
+body:not(.fossil-dark-style) .hljs-addition {color: #22863a;background-color: #f0fff4;}
+body:not(.fossil-dark-style) .hljs-deletion {color: #b31d28;background-color: #ffeef0;}
+************************************/
+
+/************************************
+body:not(.fossil-dark-style) .hljs {color: #000;background: #fff;}
+body:not(.fossil-dark-style) .hljs-subst,
+body:not(.fossil-dark-style) .hljs-title {font-weight: 400;color: #000;}
+body:not(.fossil-dark-style) .hljs-comment,
+body:not(.fossil-dark-style) .hljs-quote {color: grey;font-style: italic;}
+body:not(.fossil-dark-style) .hljs-meta {color: olive;}
+body:not(.fossil-dark-style) .hljs-tag {background: #efefef;}
+body:not(.fossil-dark-style) .hljs-keyword,
+body:not(.fossil-dark-style) .hljs-literal,
+body:not(.fossil-dark-style) .hljs-name,
+body:not(.fossil-dark-style) .hljs-section,
+body:not(.fossil-dark-style) .hljs-selector-class,
+body:not(.fossil-dark-style) .hljs-selector-id,
+body:not(.fossil-dark-style) .hljs-selector-tag,
+body:not(.fossil-dark-style) .hljs-type {font-weight: 700;color: navy;}
+body:not(.fossil-dark-style) .hljs-attribute,
+body:not(.fossil-dark-style) .hljs-link,
+body:not(.fossil-dark-style) .hljs-number,
+body:not(.fossil-dark-style) .hljs-regexp {font-weight: 700;color: #00f;}
+body:not(.fossil-dark-style) .hljs-link,
+body:not(.fossil-dark-style) .hljs-number,
+body:not(.fossil-dark-style) .hljs-regexp {font-weight: 400;}
+body:not(.fossil-dark-style) .hljs-string {color: green;font-weight: 700;}
+body:not(.fossil-dark-style) .hljs-bullet,
+body:not(.fossil-dark-style) .hljs-formula,
+body:not(.fossil-dark-style) .hljs-symbol {color: #000;background: #d0eded;font-style: italic;}
+body:not(.fossil-dark-style) .hljs-doctag {text-decoration: underline;}
+body:not(.fossil-dark-style) .hljs-template-variable,
+body:not(.fossil-dark-style) .hljs-variable {color: #660e7a;}
+body:not(.fossil-dark-style) .hljs-addition {background: #baeeba;}
+body:not(.fossil-dark-style) .hljs-deletion {background: #ffc8bd;}
+body:not(.fossil-dark-style) .hljs-emphasis {font-style: italic;}
+body:not(.fossil-dark-style) .hljs-strong {font-weight: 700;}
+************************************/
+
+/************************************/
+/*body:not(.fossil-dark-style) .hljs {background: #fbebd4;color: #84613d;}*/
+body:not(.fossil-dark-style) .hljs-comment,
+body:not(.fossil-dark-style) .hljs-quote {color: #a57a4c;}
+body:not(.fossil-dark-style) .hljs-meta,
+body:not(.fossil-dark-style) .hljs-name,
+body:not(.fossil-dark-style) .hljs-regexp,
+body:not(.fossil-dark-style) .hljs-selector-class,
+body:not(.fossil-dark-style) .hljs-selector-id,
+body:not(.fossil-dark-style) .hljs-tag,
+body:not(.fossil-dark-style) .hljs-template-variable,
+body:not(.fossil-dark-style) .hljs-variable {color: #dc3958;}
+body:not(.fossil-dark-style) .hljs-built_in,
+body:not(.fossil-dark-style) .hljs-deletion,
+body:not(.fossil-dark-style) .hljs-link,
+body:not(.fossil-dark-style) .hljs-literal,
+body:not(.fossil-dark-style) .hljs-number,
+body:not(.fossil-dark-style) .hljs-params,
+body:not(.fossil-dark-style) .hljs-type {color: #f79a32;}
+body:not(.fossil-dark-style) .hljs-addition,
+body:not(.fossil-dark-style) .hljs-bullet,
+body:not(.fossil-dark-style) .hljs-string,
+body:not(.fossil-dark-style) .hljs-symbol {color: #889b4a;}
+body:not(.fossil-dark-style) .hljs-function,
+body:not(.fossil-dark-style) .hljs-keyword,
+body:not(.fossil-dark-style) .hljs-selector-tag {color: #98676a;}
+body:not(.fossil-dark-style) .hljs-attribute,
+body:not(.fossil-dark-style) .hljs-section,
+body:not(.fossil-dark-style) .hljs-title {color: #f06431;}
+body:not(.fossil-dark-style) .hljs-emphasis {font-style: italic;}
+body:not(.fossil-dark-style) .hljs-strong {font-weight: 700;}
+/* Local customization: */
+/*body:not(.fossil-dark-style) .hljs {
+    background-color: #fbebd4;
+    filter: invert(1);
+}*/
+/************************************/
+/** end light-themed syntax highlighting. **********************/
+/************************************************************************/
+
+/**local customization for all hilightjs modes****************/
+pre > code.hljs {
+    padding: 0.5em 0.75em;
+    border-radius: 0.25em;
+}
+
+code {
+    border: 1px solid #77777755;
+    border-radius: 0.2em;
+    padding: 0.15em 0.25em;
+}
+pre > code {
+    border: initial;
+}
+
+/************************************************************************
+General /doc style tweaks to try to bring some sanity to the wildly
+disparate skin styles.
+ ************************************************************************/
+.markdown blockquote {
+    margin-left: 2em;
+    margin-right: 2em;
+}
+.markdown pre {
+    margin-left: 2em;
+    margin-right: 2em;
+    /*border: 1px inset rgba(200,200,200,0.5);*/
+    /*border: 1px inset;*/
+    padding: 0;
+    border-style: solid;
+    border-width: 1px;
+    border-color: #77777760;
+    border-radius: 0.30em;
+}
+.markdown pre > code:not(.hljs) {
+    padding: 0;
+    display: block;
+    margin: 0.25em 0.5em;
+}
+
+.markdown blockquote > p {
+    font-size: 0.9em;
+    margin-left: 0;
+    margin-right: 0;
+}
+
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 {
+    border-bottom: 1px solid;
+    border-radius: 0.15em;
+    border-top: 1px solid;
+    padding-left: 0.25em;
+    padding-right: 0.25em;
+}
+
+.markdown h5 { /* link at the top of each page to the central index. */
+    font-size: 1em;
+    /*border-left: 1px solid;
+    border-right: 1px solid;
+    border-radius: 0.15em;*/
+}
+
+code {
+    padding: 0.1em 0.125em;
+}

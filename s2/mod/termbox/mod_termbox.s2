@@ -1,0 +1,61 @@
+const tb = s2.termbox ||| s2.loadModule('termbox.so');
+tb.init();
+var currentInputMode, currentOutputMode;
+var ex = catch {
+    currentInputMode = tb.inputMode(tb.inputMode.alt);
+    currentOutputMode = tb.outputMode(tb.outputMode.normal);
+    tb.cursor(-1,-1);
+    var x = 0, y = 0,
+    fg = (tb.outputMode.256===currentOutputMode)
+        ? 0xb8
+        : tb.color.yellow | tb.attr.bold,
+    bg = (tb.outputMode.256===currentOutputMode)
+        ? 0xf0
+        : tb.color.cyan | tb.attr.bold
+    ;
+    tb.clear(fg,bg);
+    const print = proc(){
+        if(y==tb.height()){
+            y = 0;
+            tb.clear(fg, bg);
+        }
+        argv.unshift(0, y++, fg, bg);
+        tb.print5.apply(undefined,argv);
+        return tb;
+    };
+    print("Screen size: ", tb.size());
+    const killKey = 'q'.charAt(0,true);
+    print("Trigger event to continue (tap a key, resize the terminal). '",killKey.toChar(),"' quits");
+    //tb.cursor(0,0);
+    tb.present();
+    const waitTime = 5000;
+    while(1){
+        var event = waitTime ? tb.peek(waitTime) : tb.poll();
+        if(!event){
+            assert waitTime>0 /* poll() never returns a non-object */;
+            print("Too slow! Try within ",waitTime,"ms.");
+            tb.present();
+            continue;
+        }
+        (killKey===event.ch) && break;
+        if(event.w){
+            tb.present(/*needed to get new term size here*/).clear(fg,bg);
+            y = 0;
+        }
+        print("Event: ", event);
+        event.ch && print('event.ch.toChar(): ', event.ch.toChar());
+        tb.present();
+    }
+    print("Trigger another event to exit.");
+    tb.present();
+    tb.poll();
+};
+tb.shutdown();
+ex && (throw ex) || unset ex;
+print('****** screen attributes =', tb.attr.propertyKeys());
+print('****** colors =', tb.color.propertyKeys());
+print("****** Output mode:",currentOutputMode, "modes:");
+foreach(tb.outputMode=>k,v) print(k);
+print("****** Input mode:", currentInputMode, "modes:");
+foreach(tb.inputMode=>k,v) print(k);
+print("****** key mappings:", tb.keys.entryKeys().sort());

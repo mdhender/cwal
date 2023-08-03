@@ -1,0 +1,123 @@
+assert true
+assert $true == true; # dollar is optional, provided for consistency's sake
+assert !false
+assert !null
+assert !undefined
+assert null != undefined
+assert null != false
+assert true == !false
+assert {abc def} == "abc def"
+assert {{{
+
+    abc def
+
+}}} == {abc def}
+assert <<<:XX    three spaces    XX == "   three spaces   "
+assert {{{:    three spaces    }}} == "   three spaces   "
+
+
+decl {
+    x 1
+    y 2
+}
+assert [info is-local x]
+assert $x == 1
+assert [info is-local y]
+assert 2 == $y
+unset x y
+assert ![info is-local x]
+
+decl x object {a 1 b 2 c 3}
+assert 1 == $x[a]
+assert 2 == $x[b]
+assert 3 == $x[c]
+unset \
+    $x[b]
+assert 1 == $x[a]
+assert undefined == $x[b]
+assert 3 == $x[c]
+if {false} {
+    # for later introspection...  This will fail in whcl__eval_token()
+    # because the first token in the [...] is an EOX.  That's not
+    # wrong, but maybe we can be more lax in that case. Fixing this,
+    # it turns out, requires rather significant token chain surgery
+    # because it's a fixed array.
+    assert 3 == $x[
+               c
+               ]
+}
+decl y 'c'
+unset $x[b] $x[a] $x[$y]
+assert undefined == $x[a]
+assert undefined == $x[b]
+assert undefined == $x[c]
+
+set $x[a] [object {b c}]
+assert 'c' == $x[a][b]
+set $x[a][c] 'd'
+assert 'd' == $x[a][c]
+set $x[a][d] [object x 'x']
+set $x[x] -1
+assert [info
+         is-object
+         $x[a][d]
+        ]
+assert -1 == $x[x]
+assert $x[$x[a][d][x]] == $x[x]
+assert -1 == $x[x] && $x[$x[a][d][x]] == $x[x]
+#echo x = $x
+assert -1 == x.(x)
+assert -1 == x.{x}
+assert -1 == x.[concat x]
+assert d == x.[concat a][c]
+affirm [info is-string x.[while {true} {break a}][c]]
+unset x
+
+assert 2 == [
+
+# ensure that leading/trailing newlines in [...] are ignored.
+             
+             expr 1 + 1
+
+]
+assert 2 == (
+
+# ensure that leading/trailing newlines in (...) are ignored.
+             
+             1 + 1
+
+)
+
+decl x-y-z 1
+assert 1 == $x-y-z
+unset x-y-z
+
+if {true} {
+    decl o object {a 1 b 2}
+    assert [info is-object $o]
+    unset o
+    decl a array (1 2 3)
+    assert [info is-array $a]
+    set a catch {throw 1}
+    assert [info is-exception $a]
+    unset a
+}
+
+if {true} {
+    decl o object {
+        a {
+            x 1
+            y (2 3 4)
+        }
+        b {
+            z (
+               1
+               {a 1 b 2}
+               (2 3 4)
+               5)
+        }
+    }
+    assert [info is-array $o[a][y]]
+    assert 4 == $o.a[y].2
+    assert 2 == $o[b].z[1].b
+}

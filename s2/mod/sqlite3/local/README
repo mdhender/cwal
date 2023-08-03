@@ -1,0 +1,10 @@
+To use a local copy of sqlite3.[ch] for the s2 sqlite3 module, simply
+place sqlite3.[ch] in this directory. The build process will see it
+and use it instead of the system-wide library.
+
+FWIW, this approach is highly recommended over using the system-level
+library, as those are often sorely out of date, especially on
+*cough*RedHat*cough* systems used by many web hosters.
+
+We do not include copies of sqlite3.[ch] in this source repo only
+because they're so huge :/.

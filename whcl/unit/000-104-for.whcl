@@ -1,0 +1,41 @@
+########################################################################
+# for-loop tests
+decl x 0
+for {decl i 0} {$i < 5} {incr i} {
+    set x $i
+}
+assert 4 == $x
+unset x
+
+decl x for {decl i 0} {true} {incr i} {
+    if {5 == $i} { break $i }
+}
+assert 5 == $x
+
+set x for {decl i 0; decl j 0} {true} {incr i} {
+    decl m 0
+    decl v for {set j 0} {$j < 5} {incr j} {
+        set m expr $i * $j
+        if {$m == 20} {
+            break $m
+        }
+    }
+    if {$v == 20} {break $v}
+}
+assert 20 == $x
+unset x
+
+decl z 0
+for {
+    decl x 0; decl y 0
+} {
+   # testing EOL-stripping...
+   $z
+   # ... in an expr ...
+   <
+   # ... context
+   10
+} {
+  incr x; incr y; set z expr $x + $y
+} {}
+assert 10 == $z

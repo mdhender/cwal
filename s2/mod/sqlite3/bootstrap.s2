@@ -1,0 +1,1 @@
+return s2.sqlite3 ||| s2.loadModule('sqlite3.so');

@@ -1,0 +1,20 @@
+/** 
+    Loads DataModels for the modeler module.
+*/
+return requireS2(['modeler'],proc(M){
+    return {
+        cacheIt: true,
+        // isVirtual: false,
+        // suffix: uses the defaults
+        prefix: requireS2.plugins.default.prefix.slice().withThis(proc(){
+            this.push(requireS2.home
+                      +s2.PathFinder.separator
+                      +'DataModels');
+            return this;
+        }),
+        modeler: M,
+        load: function(name){
+            return this.modeler.loadModel(name)
+        }
+    }
+});

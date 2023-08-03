@@ -1,0 +1,81 @@
+const M = s2.loadModule('math.so');
+/*
+  To be honest, i don't know what most of these functions do.  Math
+  beyond multiplication is above my pay grade.
+*/
+const fDD = [
+    'acos',
+    'asin',
+    'atan',
+    'ceil',
+    'cos',
+    'cosh',
+    'exp',
+    'fabs',
+    'floor',
+    'log',
+    'log10',
+    'sin',
+    'sinh',
+    'sqrt',
+    'tanh'
+];
+const fDDD = [
+    'atan2',
+    'fmod',
+    'pow'
+];
+
+const fMisc = [
+    'frexp',
+    'isnan',
+    'isinf',
+    'ldexp',
+    'modf'
+];
+
+const vals = [ 'PI' ];
+
+s2out << "Funcs with signature [double F(double)]:\n\t";
+foreach(@fDD=>v) { s2out << ' ' << v <<'()'; typeinfo(isfunction M[v]) || throw v; }
+
+s2out << "\n\nFuncs with signature [double F(double, double)]:\n\t";
+foreach(@fDDD=>v) { s2out << ' '<< v <<'()'; typeinfo(isfunction M[v]) || throw v; }
+
+s2out << "\n\nMisc. funcs:\n\t";
+foreach(@fMisc=>v) { s2out << ' '<< v <<'()'; typeinfo(isfunction M[v]) || throw v; }
+
+s2out << "\n\nConstants:\n\t";
+foreach(@vals=>v) { s2out << ' '<< v; typeinfo(isdouble M[v]) || throw v; }
+s2out << '\n\n';
+
+// Returns true if x is approximately equal to y.
+const approx = proc f(x, y, z=0.01){
+    return x > y-z && x < y+z;
+};
+
+const test = proc(x){
+    s2out << '\t' << x << '\n';
+    (eval -> x) || throw "failed: "+x;
+};
+
+s2out << 'Various tests...\n';
+/**
+ TODO:
+
+ http://www.cplusplus.com/reference/cmath/
+
+ has demos of all of these functions, including inputs and
+ outputs. Let's go rip off some of those.
+*/
+test(eval=>approx(M.PI, 3.1415));
+test(eval=>M.isnan(M.sqrt(-1)));
+test(eval=>!M.isnan(M.sqrt(1)));
+test(eval=>{const t = M.modf(3.15); 3===t.0 && approx(t.1, 0.15)});
+test(eval=>M.pow(2,3)===8.0);
+test(eval=>{const t = M.frexp(3.2); 2===t.0 && approx(t.1, 0.8)});
+test(eval=>{const t = M.frexp(1024); 11===t.0 && approx(t.1, 0.5)});
+test(eval=>{const t = M.frexp(8); 4===t.0 && approx(t.1, 0.5)});
+test(eval=>{3.0 === M.ceil(2.8)});
+test(eval=>{2.0 === M.floor(2.8)});
+;;

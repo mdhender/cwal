@@ -1,0 +1,21 @@
+/* onTrigger.s2 test code */
+requireS2(['onTrigger'],proc(ot){
+    var my = {x: 0, msg:undefined};
+    ot(my).on('hi', proc(e,msg){
+        print(__FLC,'on(hi) handler',argv);
+        ++e.target.x;
+        e.target.msg = msg;
+    });
+    affirm typeinfo(isobject my[ot.secretKey]);
+    affirm typeinfo(isarray my[ot.secretKey].hi);
+    ot(my).trigger('hi', 'there');
+    affirm 1 === my.x;
+    affirm 'there' === my.msg;
+    ot(my).trigger('nope', 1);
+    affirm 1 === my.x;
+    affirm 'there' === my.msg;
+    ot(my).trigger('hi', 'bye');
+    affirm 2 === my.x;
+    affirm 'bye' === my.msg;
+    print(__FLC, 'done');
+});

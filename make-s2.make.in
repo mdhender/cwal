@@ -1,0 +1,688 @@
+#!/hey/emacs/this/is/make
+#
+# This is the main makefile for s2/ and s2/mod. It is intended to be
+# included from/via the main GNUmakefile.
+########################################################################
+s2:
+ifneq (1,$(MAKING_CLEAN))
+all: s2
+endif
+S2_MAKEFILE := $(word $(words $(MAKEFILE_LIST)), $(MAKEFILE_LIST))
+
+$(call ShakeNMake.CALL.CLEAN-SET,s2)
+$(call ShakeNMake.CALL.CLEAN-SET,s2-mod)
+clean-s2: clean-s2-mod
+distclean-s2: distclean-s2-mod
+clean-root clean-cwal: clean-s2
+distclean-root distclean-cwal: distclean-s2
+
+S2_HAVE_ZLIB ?= @HAVE_ZLIB@
+S2_HAVE_USLEEP ?= @HAVE_USLEEP@
+S2_HAVE_CLOCK_GETTIME ?= @HAVE_CLOCK_GETTIME@
+S2_LDFLAGS_CLOCK_GETTIME ?= @lib_clock_gettime@
+S2_HAVE_REGCOMP ?= @HAVE_REGCOMP@
+S2_HAVE_DLOPEN ?= @HAVE_LIBDL@
+S2_HAVE_LTDL ?= @HAVE_LIBLTDL@
+S2_LDFLAGS_DLL_OPENER := @LDFLAGS_MODULE_LOADER@
+S2_HAVE_TERMBOX ?= @HAVE_TERMBOX@
+S2_LDFLAGS_TERMBOX ?= @lib_tb_init@
+S2_ENABLE_COMPRESSION ?= @S2_ENABLE_COMPRESSION@
+S2_ENABLE_CXX ?= @ENABLE_CXX@
+S2SH_STATIC_MODULES ?= @S2SH_STATIC_MODULES@
+S2SH_STATIC ?= @S2SH_STATIC@
+ifeq (,@CXX@)
+  S2_ENABLE_CXX := 0
+else
+  S2_ENABLE_CXX ?= 1
+endif
+S2_HAVE_POPEN ?= @HAVE_POPEN@
+S2_HAVE_FORK ?= @HAVE_FORK@
+S2_HAVE_OPENDIR ?= @HAVE_OPENDIR@
+S2_HAVE_CHDIR ?= @HAVE_CHDIR@
+S2_HAVE_GETCWD ?= @HAVE_GETCWD@
+S2_HAVE_STAT ?= @HAVE_STAT@
+
+########################################################################
+# S2_REGEX_CAPTURE_LIMIT: capture limit for both regex_posix and
+# regex_js modules (they "really should" have the same limit, for API
+# compatibility). Increasing this costs memory for each JS regex
+# instance, so keep it reasonable. For POSIX regexes it just costs
+# a bit of stack space.
+S2_REGEX_CAPTURE_LIMIT := 10
+
+########################################################################
+# Line editing libraries...
+S2SH_ENABLE_LINENOISE ?= @S2SH_ENABLE_LINENOISE@
+S2SH_ENABLE_READLINE ?= @S2SH_ENABLE_READLINE@
+ifeq (11,$(S2SH_ENABLE_LINENOISE)$(S2SH_ENABLE_READLINE))
+  $(error Cannot enable both LINENOISE and READLINE.)
+endif
+ifneq (1,$(S2SH_ENABLE_READLINE))
+  S2SH_LDFLAGS_READLINE :=
+else
+  S2SH_LDFLAGS_READLINE ?= @lib_readline@
+endif
+# /line editing
+########################################################################
+
+########################################################################
+# S2_ENABLE_LOADABLE_MODULES and friends...
+ifeq (0,$(S2SH_STATIC))
+# If we're in building s2sh statically, leave loadable modules
+# disabled, as we cannot load them when linked statically.
+ifeq (1,$(S2_HAVE_DLOPEN))
+  S2_DLL_OPENER := dl
+  S2_ENABLE_LOADABLE_MODULES := 1
+  S2_HAVE_LTDL := 0
+else ifeq (1,$(S2_HAVE_LTDL))
+  S2_DLL_OPENER := ltdl
+  S2_ENABLE_LOADABLE_MODULES := 1
+  S2_HAVE_DLOPEN := 0
+else 
+  S2_DLL_OPENER := 0
+  S2_ENABLE_LOADABLE_MODULES := 0
+  S2_LDFLAGS_DLL_OPENER :=
+  # /S2_HAVE_LTDL
+endif
+# /S2_HAVE_DLOPEN
+endif
+# /S2SH_STATIC
+########################################################################
+
+S2_SRC := $(addprefix $(DIR.s2)/,\
+	s2.c \
+	array.c \
+	enum.c \
+	eval.c \
+	func.c \
+	fs.c \
+	hash.c \
+	io.c \
+	mod.c \
+	number.c \
+	ob.c \
+	ops.c \
+	pf.c \
+	protos.c \
+	str.c \
+	t10n.c \
+	tmpl.c \
+	time.c \
+	unix.c \
+	strftime.c)
+S2_OBJ := $(subst .c,.o,$(S2_SRC))
+########################################################################
+# zlib support...
+ifeq (1,$(S2_ENABLE_COMPRESSION))
+  ifeq (1,$(S2_HAVE_ZLIB))
+    S2_ENABLE_ZLIB := 1
+    S2_LDFLAGS_COMPRESSION := -lz
+  else
+    S2_ENABLE_ZLIB := 0
+    S2_LDFLAGS_COMPRESSION :=
+  endif
+else
+  S2_ENABLE_ZLIB := 0
+  S2_LDFLAGS_COMPRESSION :=
+endif
+
+S2_OBJ_USING_COMPRESSION += str.o
+#ifeq (1,$(S2_ENABLE_ZLIB))
+#  $(info Enabling zlib for compression.)
+#else
+#  $(info zlib support disabled.)
+#endif
+
+$(S2_OBJ_USING_COMPRESSION): CFLAGS+=-DS2_INTERNAL_MINIZ=$(S2_INTERNAL_MINIZ)
+$(S2_OBJ_USING_COMPRESSION): CPPFLAGS+=-DS2_ENABLE_ZLIB=$(S2_ENABLE_ZLIB)
+$(DIR.s2)/s2_t10n.o: CPPFLAGS+=-DS2_T10N_COMPILE=$(S2_T10N_COMPILE)
+$(S2_OBJ): CPPFLAGS+=$(PROJECT_INCLUDES)
+
+########################################################################
+# libs2
+S2_CLIENT_LDFLAGS := -L. -ls2 -lcwal
+libs2.EXTLIBS := \
+		$(S2_LDFLAGS_DLL_OPENER) \
+		$(S2_LDFLAGS_COMPRESSION) \
+		$(S2_LDFLAGS_CLOCK_GETTIME) \
+		$(S2_LDFLAGS_ZLIB)
+
+########################################################################
+# DLL...
+ifeq (1,$(CWAL_BUILD_SHARED_LIBS))
+libs2.DLL.OBJECTS := $(S2_OBJ)
+libs2.DLL.LDFLAGS += $(libs2.EXTLIBS)
+$(call ShakeNMake.CALL.RULES.DLLS, libs2)
+libs2.thelib := $(libs2.DLL)
+else
+########################################################################
+# Static lib...
+libs2.LIB.OBJECTS := $(S2_OBJ)
+S2_CLIENT_LDFLAGS += $(libs2.EXTLIBS)
+$(call ShakeNMake.CALL.RULES.LIBS, libs2)
+libs2.thelib := $(libs2.LIB)
+endif
+$(libs2.thelib): $(libcwal.thelib)
+ifneq (1,$(MAKING_CLEAN))
+s2: $(libs2.thelib)
+endif
+# /libs2
+########################################################################
+CLEAN.s2 += $(libs2.LIB.OBJECTS)
+DISTCLEAN.s2 += $(DIR.inccwal)/s2/s2_config.h
+
+########################################################################
+# Bins and libs...
+########################################################################
+# Figure out which terminal line editor to use...
+linenoise.OBJ :=
+ifeq (1,$(S2SH_ENABLE_READLINE))
+#  $(info Enabling GNU Readline)
+else ifeq (1,$(S2SH_ENABLE_LINENOISE))
+  linenoise.DIR := $(DIR.s2)/linenoise
+  ifneq (,$(wildcard $(linenoise.DIR)/*.c))
+#    $(info Enabling linenoise)
+    linenoise.OBJ := $(linenoise.DIR)/linenoise.o \
+		$(linenoise.DIR)/utf8.o $(linenoise.DIR)/stringbuf.o
+    CLEAN.s2 += $(linenoise.OBJ)
+    LN_CPPFLAGS := -std=c99 -DUSE_UTF8=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE
+    $(linenoise.DIR)/utf8.o: CPPFLAGS+=$(LN_CPPFLAGS)
+    $(linenoise.DIR)/stringbuf.o: CPPFLAGS+=-w $(LN_CPPFLAGS)
+    $(linenoise.DIR)/linenoise.o: CPPFLAGS+=-w $(LN_CPPFLAGS)
+    $(linenoise.DIR)/linenoise.o: CFLAGS:=$(filter-out -pedantic -Wpedantic -Wextra -std=c89,$(CFLAGS))
+  else
+#    $(info Linenoise files not found - not enabling)
+    S2SH_ENABLE_LINENOISE := 0
+  endif
+endif
+ifneq (1,$(S2SH_ENABLE_READLINE))
+  ifneq (1,$(S2SH_ENABLE_LINENOISE))
+#    $(info No line editing enabled)
+  endif
+endif
+# /line editing
+########################################################################
+
+########################################################################
+# Obligatory basic test app...
+$(DIR.s2)/test.BIN.OBJECTS := $(DIR.s2)/test.o
+ifeq (0,$(S2_T10N_COMPILE))
+  $(DIR.s2)/test.BIN.OBJECTS += $(DIR.s2)/c9n.o
+endif
+$(DIR.s2)/test.BIN.LDFLAGS := $(S2_CLIENT_LDFLAGS)
+$(call ShakeNMake.CALL.RULES.BINS,$(DIR.s2)/test)
+$($(DIR.s2)/test.BIN): $(libs2.thelib)
+$($(DIR.s2)/test.BIN.OBJECTS): CPPFLAGS+=$(S2_INCLUDES)
+ifneq (1,$(MAKING_CLEAN))
+s2: $($(DIR.s2)/test.BIN)
+endif
+
+ifeq (1,$(S2_ENABLE_CXX))
+  $(DIR.s2)/pptest.BIN.OBJECTS := $(DIR.s2)/pptest.o
+  $(DIR.s2)/pptest.BIN.LDFLAGS := -lstdc++ $(S2_CLIENT_LDFLAGS)
+  $(call ShakeNMake.CALL.RULES.BINS,$(DIR.s2)/pptest)
+  $($(DIR.s2)/pptest.BIN): $(libs2.thelib)
+  $($(DIR.s2)/pptest.BIN.OBJECTS): CPPFLAGS+=$(S2_INCLUDES)
+  ifneq (1,$(MAKING_CLEAN))
+  s2: $($(DIR.s2)/pptest.BIN)
+  endif
+endif
+
+########################################
+# s2sh...
+s2sh := $(DIR.s2)/s2sh
+s2sh2 := $(DIR.s2)/s2sh2
+$(s2sh).BIN.OBJECTS := $(addprefix $(DIR.s2)/,\
+	shell.o shell_extend.o) $(cliapp.OBJ)
+$(s2sh2).BIN.OBJECTS := $(addprefix $(DIR.s2)/,\
+	shell2.o) $(cliapp.OBJ)
+ifneq (1,$(S2SH_CGI_MODE))
+$(DIR.s2)/shell.o: CPPFLAGS+=-DS2_SHELL_EXTEND
+endif
+# S2_SHELL_EXTEND is (in this makefile) just for testing...
+$(s2sh).BIN.LDFLAGS := $(S2_CLIENT_LDFLAGS) $(cliapp.CLIENT_LDFLAGS)
+$(s2sh2).BIN.LDFLAGS := $(S2_CLIENT_LDFLAGS) $(cliapp.CLIENT_LDFLAGS)
+ifeq (1,$(S2SH_STATIC))
+  $(s2sh).BIN.LDFLAGS += -static
+  $(s2sh2).BIN.LDFLAGS += -static
+else ifeq (1,$(S2_ENABLE_LOADABLE_MODULES))
+  $(s2sh).BIN.LDFLAGS += -rdynamic
+  $(s2sh2).BIN.LDFLAGS += -rdynamic
+endif
+
+S2_INCLUDES := -I$(DIR.s2) $(PROJECT_INCLUDES)
+$($(s2sh).BIN.OBJECTS) $(DIR.s2)/shell2.o: CPPFLAGS+=$(S2_INCLUDES)
+CLEAN.s2 += $($(s2sh).BIN.OBJECTS) $($(s2sh2).BIN.OBJECTS)
+
+$(call ShakeNMake.CALL.RULES.BINS,$(s2sh) $(s2sh2))
+s2sh.BIN := $($(s2sh).BIN)
+s2sh2.BIN := $($(s2sh2).BIN)
+$(s2sh.BIN): $(libs2.thelib)
+$(s2sh2.BIN): $(libs2.thelib)
+ifneq (1,$(MAKING_CLEAN))
+s2: $(s2sh.BIN) $(s2sh2.BIN)
+endif
+# /s2sh
+########################################################################
+
+########################################################################
+# C++ stuff
+S2_ENABLE_CXX ?= 0
+# SIG_HPP ==> generated variants of many templates for various
+# arities.
+SIG_HPP := $(DIR.inccwal)/cwal_convert_generated.hpp
+CWAL_CONVERT_GENERATED.HPP := $(SIG_HPP)
+ifneq (0,$(S2_ENABLE_CXX))
+# ^^^ for use in C++-based modules as a dependency to avoid
+# building them while that file is being regenerated.
+all: $(SIG_HPP)
+# SIG_ARITY ==> the maximum number of types/arguments to generate
+# cwal::Signature (and friend) templates for.
+SIG_ARITY := 10
+# SIG_GENERATOR ==> the script which generates $(SIG_ARITY)
+# overloads of stuff for use in $(SIG_HPP).
+SIG_GENERATOR := $(DIR.s2)/createSignatureTypeList.sh
+$(SIG_HPP): $(S2_MAKEFILE)
+$(SIG_GENERATOR):
+$(SIG_HPP): $(SIG_GENERATOR)
+	@echo "Creating $@..."; \
+	{\
+		echo "/* GENERATED CODE! EDIT AT YOUR OWN RISK! */"; \
+		bash $(SIG_GENERATOR) $(SIG_ARITY); \
+	} > $@
+$(DIR.inccwal)/cwal_convert.hpp:
+$(DIR.s2)/pptest.o $(DIR.inccwal)/cwal_convert.hpp: $(SIG_HPP)
+endif
+# /C++
+########################################################################
+
+########################################################################
+# External modules...
+
+########################################################################
+# If S2_ENABLE_STATIC_MODULES is 1 then we'll set up support for
+# static modules and attempt to link in any listed in
+# $(S2SH_STATIC_MODULES). Such modules will get installed in s2sh as
+# s2.moduleName.
+#
+# Static modules are found in mod/*/static_module.{c,cpp}. Module test
+# scripts must be prepared to handle the case that the module is
+# statically linked in or needs to be loaded with s2.loadModule(),
+# e.g.:
+#
+# const myMod = s2.myMod ||| s2.loadModule('myMod.so')
+#
+# Using loadModule() when the module is statically linked in breaks
+# the module registration in weird ways.
+#
+# To specify a list of static modules to build into s2sh, configure
+# the source tree with:
+#
+#   ./configure --s2sh-modules='mod1 mod2 ...'
+#
+# And/or:
+#
+#   ./configure --cgi
+#
+# to build in a hard-coded list of modules commonly used by CGI
+# scripts. If both options are used, the lists are combined.
+ifeq (,$(S2SH_STATIC_MODULES))
+  # $(info STATIC_MODULES.DIRS is empty: not building any static modules.)
+  S2_ENABLE_STATIC_MODULES := 0
+  STATIC_MODULES.DIRS :=
+else
+  S2_ENABLE_STATIC_MODULES := 1
+  STATIC_MODULES.DIRS := $(sort $(patsubst %,$(DIR.s2-mod)/%,$(S2SH_STATIC_MODULES)))
+  # ^^^^ we need $(sort) to remove any dupes the user may have provided,
+  # as dupes lead to linking errors (ODR violations).
+endif
+
+########################################################################
+# S2_MODULE_S2TOC eval/call-able which sets up the build of an s2
+# module's C file from an s2 file, optionally stripped of comments and
+# minified, to save on C stack space (the generated C data is
+# relatively large). This build compiles an s2 file to a C byte array
+# for inclusion into C, e.g. via s2_set_from_script().
+#
+# This is only to be called by the routine(s) which set(s) up the
+# module rules and only for modules which define MODULE.SCRIPT.s2.
+#
+# Argument: $1 = module name.
+define S2_MODULE_S2TOC
+$$(if $$(MODULE.$(1).SCRIPT.s2),,$$(error missing MODULE.$(1).SCRIPT.s2))
+MODULE.$(1).input.s2 := $$(MODULE.$(1).SCRIPT.s2)
+MODULE.$(1).output.s2 := $$(MODULE.$(1).DIR)/$(1).min.s2
+MODULE.$(1).output.c := $$(MODULE.$(1).DIR)/s2_script_$(1).c
+########################################
+# Configurable bits (set them before $(call)'ing this):
+#  MODULE.$(1).stripComments (1|0): whether to strip C/C++ comments
+#     from the input.
+#  MODULE.$(1).cname (C identifier): the argument to pass to
+#     $(tochararray.bin), i.e. the C function name used to access
+#     the imported bytes.
+# BROKEN BY PORTING:
+#  MODULE.$(1).minify (1|0): use s2.minifyScript() to shrink the input
+#     Minification also strips comments. It does not work with all
+#     scripts, thus it defaults to 0.
+MODULE.$(1).stripComments ?= 1
+MODULE.$(1).cname ?= s2_script_$(1)
+MODULE.$(1).minify ?= 0
+########################################
+$$(MODULE.$(1).input.s2):
+ifeq (0,$(S2SH_STATIC)$$(filter $(1),$$(S2SH_STATIC_MODULES)))
+# Reminder: for static builds we have a circular dependency between
+# compiled-in scripts and $(s2sh). For static builds we have to forego
+# minification.
+$$(MODULE.$(1).output.s2): $$(s2sh.BIN)
+endif
+$$(MODULE.$(1).output.s2): $$(MODULE.$(1).input.s2) $$(stripcomments.bin)
+	@echo -n "[$$@]: Creating from: "; \
+	sz=$$$$(ls -la $$(MODULE.$(1).input.s2) | awk '{print $$$$5}'); \
+	echo "[$$(MODULE.$(1).input.s2)]: $$$$sz bytes"
+	@if [ x1 = x$$(MODULE.$(1).stripComments) ]; then \
+		echo "[$$@]: stripping comments..."; 	\
+		$$(stripcomments.bin) < $$(MODULE.$(1).input.s2) > $$@.1; \
+	else \
+		echo "[$$@]: not stripping comments..."; 	\
+		cp -p $$(MODULE.$(1).input.s2) $$@.1; \
+	fi
+	@if [ x1 = x$$(MODULE.$(1).minify) ]; then \
+		if [ ! -x $$(s2sh.BIN) ]; then \
+			echo "[$$@]: s2sh not found! NOT minifying (despite the .min output filename)."; 	\
+			mv $$@.1 $$@; \
+		else \
+			sz=$$$$(ls -la $$@.1 | awk '{print $$$$5}'); \
+			echo -n "[$$@]: before minify: $$$$sz bytes"; \
+			echo "[$$@]: minifying..."; 	\
+			$$(s2sh.BIN) --a -e 's2out<<s2.minifyScript(s2.Buffer.readFile(s2.ARGV.nonFlags.0))<<"\n"' -o $$@ -- $$@.1; \
+		fi; \
+	else \
+		echo "[$$@]: not minifying..."; 	\
+		mv $$@.1 $$@; \
+	fi
+	@rm -fr $$@.1
+	@stat -c '[%n]: %s bytes' $$@
+$$(MODULE.$(1).output.c): $$(MODULE.$(1).output.s2) $$(tochararray.bin)
+	@echo "[$$@]: converting [$$(MODULE.$(1).output.s2)] to a C function [$$(MODULE.$(1).cname)()]...."; \
+		$$(tochararray.bin) $$(MODULE.$(1).cname) < $$(MODULE.$(1).output.s2) > $$@ || exit; \
+		sz=$$$$(ls -la $$@ | awk '{print $$$$5}'); \
+		echo "[$$@]: $$$$sz bytes"
+MODULE.$(1).output.o := $$(subst .c,.o,$$(MODULE.$(1).output.c))
+$$(MODULE.$(1).output.o): $$(MODULE.$(1).output.c)
+MODULE.$(1).OBJ += $$(MODULE.$(1).output.o)
+CLEAN.s2-mod-$(1) += $$(MODULE.$(1).output.s2).1 \
+  $$(MODULE.$(1).output.c) \
+  $$(MODULE.$(1).output.s2) \
+  $$(MODULE.$(1).output.o)
+ifneq (,$$(MODULE.$(1).STATIC.OBJ))
+$$(MODULE.$(1).STATIC.OBJ): $$(MODULE.$(1).output.c)
+endif
+endef
+# ^^^ S2_MODULE_S2TOC
+########################################################################
+
+TEST-BANNER := ============================================================
+s2sh.MOD-TEST-FLAGS :=
+empty:=# intentionally empty
+DIR.s2-mod := $(DIR.s2)/mod
+S2_MODULE_LIST :=
+########################################################################
+# $(call)abl which sets up rules for s2 module $(1). Requires that
+# $(DIR.s2-mod)/$(1)/module-def.make exists.
+#
+# TODO: move this code generation into the configure process or
+# a tcl script we call from here, to hopefully make it slightly
+# more maintainable.
+define S2_MODULE_RULES1
+  S2_MODULE_NAME_LIST += $(1)
+  MODULE.NAME :=
+  MODULE.OBJ :=
+  MODULE.TESTS :=
+  MODULE.LDFLAGS :=
+  MODULE.CFLAGS :=
+  MODULE.CPPFLAGS :=
+  MODULE.SCRIPT.s2 :=
+  MODULE.$(1).DIR := $$(DIR.s2-mod)/$(1)
+  MODULE.$(1).DEF := $$(MODULE.$(1).DIR)/module-def.make
+  $$(eval include $$(MODULE.$(1).DEF))
+  MODULE.$(1).OBJ := $$(patsubst %,$(DIR.s2-mod)/$(1)/%,$$(MODULE.OBJ))
+  # Module may have EITHER static_module.c OR static_module.cpp, not both
+  MODULE.$(1).STATIC.C := $$(wildcard $$(DIR.s2-mod)/$(1)/static_module.c)
+  MODULE.$(1).STATIC.CPP := $$(wildcard $$(DIR.s2-mod)/$(1)/static_module.cpp)
+  MODULE.$(1).STATIC.SRC := $$(word 1,$$(MODULE.$(1).STATIC.C) $$(MODULE.$(1).STATIC.CPP))
+  MODULE.$(1).STATIC.OBJ := $$(if $$(MODULE.$(1).STATIC.SRC),\
+    $$(MODULE.$(1).DIR)/static_module.o,$$(empty))
+  MODULE.$(1).ALLOBJ := $$(MODULE.$(1).OBJ) $$(MODULE.$(1).STATIC.OBJ)
+  MODULE.$(1).LDFLAGS := $$(MODULE.LDFLAGS)
+  MODULE.$(1).CFLAGS := $$(MODULE.CFLAGS)
+  MODULE.$(1).CPPFLAGS := $$(MODULE.CPPFLAGS)
+  MODULE.$(1).SCRIPT.s2 := $$(MODULE.SCRIPT.s2)
+  MODULE.$(1).TESTS := $$(MODULE.TESTS)
+  $$(MODULE.$(1).ALLOBJ): CPPFLAGS+=$$(MODULE.$(1).CPPFLAGS) \
+      -I$$(DIR.s2-mod)/$(1) \
+      $$(PROJECT_INCLUDES)
+  $$(MODULE.$(1).ALLOBJ): CFLAGS+=$$(MODULE.$(1).CFLAGS)
+  $$(MODULE.$(1).ALLOBJ): $$(libs2.thelib)
+  $$(MODULE.$(1).OBJ): CPPFLAGS+=-DS2_MODULE_STANDALONE
+  $$(MODULE.$(1).STATIC.OBJ): CPPFLAGS+=-DS2_MODULE_STATIC
+  CLEAN.s2-mod-$(1) += $$(MODULE.$(1).ALLOBJ)
+#  s2-mod-$(1): $$(MODULE.$(1).ALLOBJ)
+  s2-mod-$(1): $$(if $$(S2SH_STATIC),$$(MODULE.$(1).OBJ),$$(MODULE.$(1).STATIC.OBJ))
+  s2-mod: s2-mod-$(1)
+  $(call ShakeNMake.CALL.CLEAN-SET,s2-mod-$(1))
+  clean-s2-mod: clean-s2-mod-$(1)
+  distclean-s2: distclean-s2-mod-$(1)
+  distclean-s2-mod: distclean-s2-mod-$(1)
+  DEPS.s2-mod-$(1).SRC += $$(wildcard $$(MODULE.$(1).DIR)/*.c $$(MODULE.$(1).DIR)/*.cpp)
+  DEPS.s2-mod-$(1).INCDIRS := $$(MODULE.$(1).DIR)
+  $(call ADD_C_DEPS,s2-mod-$(1),$$(DEPS.s2-mod-$(1).SRC))
+#  $$(info MODULE.$(1).SCRIPT.s2 = $$(MODULE.$(1).SCRIPT.s2))
+  ifneq (,$$(MODULE.$(1).SCRIPT.s2))
+    $$(eval $$(call S2_MODULE_S2TOC,$(1)))
+  endif
+ifeq (,$$(MODULE.$(1).TESTS))
+  s2-mod-test-$(1):
+	@echo "Module [$(1)] does not define MODULE.TESTS."
+else
+s2-mod-test-$(1): s2-mod-$(1) $$(s2sh.BIN)
+	@echo "$(TEST-BANNER)"; \
+	echo "Running module tests for [$(1)]..."; \
+	cd $$(MODULE.$(1).DIR); \
+	for x in $$(MODULE.$(1).TESTS); do \
+		$$(realpath $$(s2sh.BIN)) $$(s2sh.MOD-TEST-FLAGS) \
+			-o $$$$x._out -f $$$$x || exit; \
+	done; \
+	cd - >/dev/null; \
+	echo "$(TEST-BANNER)"
+endif
+  s2-mod-test: s2-mod-test-$(1)
+endef
+
+ifeq (1,$(S2SH_STATIC))
+define S2_MODULE_RULES_DLL
+endef
+else ifeq (1,$(S2_ENABLE_LOADABLE_MODULES))
+define S2_MODULE_RULES_DLL
+  $$(MODULE.$(1).DIR)/$(1).DLL.OBJECTS := $$(MODULE.$(1).OBJ)
+  $$(MODULE.$(1).DIR)/$(1).DLL.LDFLAGS := $$(MODULE.$(1).LDFLAGS)
+  $(call ShakeNMake.EVAL.RULES.DLL,$$(MODULE.$(1).DIR)/$(1))
+  s2-mod-$(1): $$($$(MODULE.$(1).DIR)/$(1).DLL)
+  CLEAN.s2-mod-$(1) += $$($$(MODULE.$(1).DIR)/$(1).DLL)
+endef
+endif
+
+#$(info S2_MODULE_RULES=$(S2_MODULE_RULES))
+
+# Modules which don't require any special prerequisites...
+S2_BUILD_MODULES_LIST := \
+  _template cgi felta FILE hashing \
+  io json math ob require sample time tmpl uuid
+ifneq (0,$(SQLITE3_ORIGIN))
+  S2_BUILD_MODULES_LIST += sqlite3
+endif
+ifeq (111,$(S2_HAVE_OPENDIR)$(S2_HAVE_CHDIR)$(S2_HAVE_GETCWD))
+  S2_BUILD_MODULES_LIST += dirent
+endif
+ifeq (1,$(S2_HAVE_REGCOMP))
+  S2_BUILD_MODULES_LIST += regex_posix
+endif
+ifeq (11,$(S2_HAVE_POPEN)$(S2_HAVE_FORK))
+# build failing for unknown reasons: compiler is not seeing fdopen()
+# despite proper feature flags being set.
+  S2_BUILD_MODULES_LIST += popen2
+endif
+ifeq (1,$(S2_ENABLE_CXX))
+  S2_BUILD_MODULES_LIST += sample_cpp
+endif
+$(foreach m,$(S2_BUILD_MODULES_LIST),$(eval $(call S2_MODULE_RULES1,$m)))
+$(foreach m,$(S2_BUILD_MODULES_LIST),$(eval $(call S2_MODULE_RULES_DLL,$m)))
+#$(info CLEAN.s2-mod-dirent=$(CLEAN.s2-mod-dirent))
+#$(info MODULE.dirent.STATIC.C=$(MODULE.dirent.STATIC.C))
+#$(info MODULE.dirent.STATIC.OBJ=$(MODULE.dirent.STATIC.OBJ))
+#$(info MODULE.dirent.OBJ=$(MODULE.dirent.OBJ))
+#$(info S2_MODULE_NAME_LIST=$(S2_MODULE_NAME_LIST))
+
+########################################################################
+# S2SH_AUTOINIT_STATIC_MODULES directive tells shell.c whether or
+# not to to automatically initialize statically-linked modules by
+# default. This is effectively the build-time default value of s2sh's
+# -M resp. --M flags. If $(S2SH_AUTOINIT_STATIC_MODULES) is 1 then the
+# effect is as if -M is always specified, else it is as if --M is
+# specified. If no static modules are built in, this has no effect.
+S2SH_AUTOINIT_STATIC_MODULES ?= 1
+
+########################################################################
+# Add .o files and LDFLAGS of static modules to $(s2sh.BIN)...
+ifeq (1,$(S2_ENABLE_STATIC_MODULES))
+S2SH.MODULE_INIT_LIST :=
+########################################################################
+# If module.MODULE_NAME.install-name is set, it should either be the
+# same as MODULE_NAME or be a dot-delimited path of properties under
+# which the module gets installed. e.g. a name of regex.js installs as
+# s2.regex.js
+#
+MODULE.regex_js.install-name := regex.js
+MODULE.regex_posix.install-name := regex.posix
+########################################################################
+# $(STATIC_MODULE_FU.def) sets up module static_module.o files for
+# static linking into $(s2sh.BIN). The module must have already been
+# set up via $(S2_MODULE_RULES).
+#
+# $1 = module base name (e.g. foo). The module is expected to live in
+# mod/$(1)/static_module.c(pp) and have the infrastructure in place to
+# build a static module (see the numerous modules for examples).
+S2SH.INIT_M_CALLS :=
+define STATIC_MODULE_FU.def
+  $$(info s2sh: Adding static module [$(1)] from [$$(MODULE.$(1).STATIC.SRC)])
+  ifeq (,$$(MODULE.$(1).STATIC.SRC))
+    $$(error static module [$(1)] not found)
+  endif
+  $$(s2sh.BIN): $$(MODULE.$(1).STATIC.OBJ)
+  $$(s2sh2.BIN): $$(MODULE.$(1).STATIC.OBJ)
+  $(s2sh).BIN.OBJECTS += $$(MODULE.$(1).STATIC.OBJ)
+  $(s2sh2).BIN.OBJECTS += $$(MODULE.$(1).STATIC.OBJ)
+  $(s2sh).BIN.LDFLAGS += $$(MODULE.$(1).LDFLAGS)
+  $(s2sh2).BIN.LDFLAGS += $$(MODULE.$(1).LDFLAGS)
+  S2SH.INIT_M_CALLS +=$$(if $$(MODULE.$(1).install-name),M2($(1),$$(MODULE.$(1).install-name)),M($(1)))
+endef
+# ^^^ STATIC_MODULE_FU.def
+# Set up the build rules for each module...
+$(foreach MODDIR,$(STATIC_MODULES.DIRS),$(eval $(call STATIC_MODULE_FU.def,$(notdir $(MODDIR)))))
+# Tell s2sh to register the modules...
+$(DIR.s2)/shell.o $(DIR.s2)/shell2.o: CPPFLAGS+=-DS2SH_MODULE_INITS="$(S2SH.INIT_M_CALLS)"
+$(DIR.s2)/shell.o $(DIR.s2)/shell2.o: CPPFLAGS+=-DS2SH_AUTOINIT_STATIC_MODULES=$(S2SH_AUTOINIT_STATIC_MODULES)
+endif
+# ^^^^ S2_ENABLE_STATIC_MODULES
+# /external modules
+########################################################################
+
+
+########################################################################
+# List of C files to use for deps generation.
+$(eval $(call ADD_C_DEPS,s2,\
+	$(wildcard $(DIR.s2)/*.[ch]) \
+	$(wildcard $(DIR.s2)/*.[ch]pp) \
+	$(wildcard $(DIR.include)/wh/libs2.h) \
+	$(wildcard $(DIR.include)/wh/cwal/s2/*.h) \
+))
+$(libs2.thelib): $(DEPS.s2.make)
+
+########################################################################
+# s2 amalgamation...
+libs2.h := libs2.h
+libs2.c := $(subst .h,.c,$(libs2.h))
+libs2.o = $(subst .h,.o,$(libs2.h))
+$(libs2.h): $(libcwal.h)
+$(libs2.c): $(libcwal.c) $(libs2.h)
+$(libs2.o): CPPFLAGS:=$(filter-out -DHAVE_AUTOCONFIG_H,$(CPPFLAGS))
+
+libs2.h.SRC := \
+	$(libcwal.h) \
+	$(addprefix $(DIR.inccwal)/s2/, \
+	s2_config.h \
+	s2_t10n.h \
+	s2.h) \
+	$(addprefix $(DIR.s2)/, \
+	s2_internal.h)
+
+libs2.c.SRC := \
+	$(libcwal.c) \
+	$(S2_SRC)
+
+S2_AMAL_MAKEFILE_DEPS := $(filter-out $(ShakeNMake.CISH_DEPS_FILE),$(MAKEFILE_LIST))
+$(S2_AMAL_MAKEFILE_DEPS):
+$(libs2.h): $(libs2.h.SRC) $(S2_AMAL_MAKEFILE_DEPS)
+	@echo "Creating $@..."
+	@{ \
+		echo '#if !defined(WANDERINGHORSE_NET_CWAL_S2_AMALGAMATION_H_INCLUDED)'; \
+		echo '#define WANDERINGHORSE_NET_CWAL_S2_AMALGAMATION_H_INCLUDED'; \
+		echo '#if !defined(S2_AMALGAMATION_BUILD)'; \
+		echo '#  define S2_AMALGAMATION_BUILD'; \
+		echo '#endif'; \
+		echo '#if !defined(_WIN32)'; \
+		echo '#  if ! defined(_XOPEN_SOURCE)'; \
+		echo '   /** on Linux, required for usleep(). */'; \
+		echo '#    define _XOPEN_SOURCE 500'; \
+		echo '#  endif'; \
+		echo '#  ifndef _XOPEN_SOURCE_EXTENDED'; \
+		echo '#    define _XOPEN_SOURCE_EXTENDED'; \
+		echo '#  endif'; \
+		echo '#  ifndef _BSD_SOURCE'; \
+		echo '#    define _BSD_SOURCE'; \
+		echo '#  endif'; \
+		echo '#  ifndef _DEFAULT_SOURCE'; \
+		echo '#    define _DEFAULT_SOURCE'; \
+		echo '#  endif'; \
+		echo '#endif'; \
+		for i in $(libs2.h.SRC); do \
+			echo "/* start of file $$i */"; \
+			cat $$i; \
+			echo "/* end of file $$i */"; \
+		done; \
+		echo '#endif/*!defined(WANDERINGHORSE_NET_CWAL_S2_AMALGAMATION_H_INCLUDED)*/'; \
+	} | sed \
+		-e '/[ ]*#[ ]*include[ ]*.*cwal.*\.h.*[">]/d' \
+		-e '/[ ]*#[ ]*include[ ]*"t10n\.h.*"/d' \
+		-e '/[ ]*#[ ]*include[ ]*.*s2.*\.h.*[">]/d' > $@
+
+$(libs2.c): $(libs2.h) $(libs2.c.SRC) $(S2_AMAL_MAKEFILE_DEPS)
+	@echo "Creating $@..."
+	@{ \
+		echo '#include "$(libs2.h)"'; \
+	} > $@
+	@{ \
+		for i in $(libs2.c.SRC); do \
+			echo "/* start of file $$i */"; \
+			cat "$$i"; \
+			echo "/* end of file $$i */"; \
+		done; \
+	} | sed \
+		-e '/[ ]*#[ ]*include[ ]*.*cwal.*\.h.*[">]/d' \
+		-e '/[ ]*#[ ]*include[ ]*"t10n\.h.*"/d' \
+		-e '/[ ]*#[ ]*include[ ]*.*s2.*\.h.*[">]/d' >> $@
+
+CLEAN.s2 += $(libs2.c) $(libs2.h) $(libs2.o)
+amal-s2: $(libs2.o)
+amal: amal-s2
+# /s2 amalgamation
+########################################################################

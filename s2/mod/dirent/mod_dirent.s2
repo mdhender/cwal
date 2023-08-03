@@ -1,0 +1,53 @@
+const DE = s2.dirent ||| s2.loadModule('dirent.so');
+assert DE.isFile(__FILE);
+const dir = DE.openDir(DE.cwd()) /* Holy cow: on my system opendir(3) allocs 32kb each time! */;
+const dir2 = DE.openDir("..");
+affirm 'dirent' === typeinfo(name dir);
+affirm 'dirent' === typeinfo(name dir2);
+
+print('Opened',typename dir, dir.name);
+print("Current dir:",DE.cwd());
+
+1 && scope {
+    var rd, count = 0;
+    print("Directory listing:");
+    while(count++ < 20 && (rd = dir.read())){
+        print(count, '\t', (dir.isDir(rd) ? "DIR:\t" : dir.isFile(rd) ? "FILE:\t" : "???:\t"), rd)
+    }
+    if(20==count) print("... truncated...");
+    dir.rewind()
+};
+
+1 && scope {
+    const dirs = [], files = [], absDirs = [];
+    dir.eachEntry(proc(e){dirs.push(e)}, dir.EachDir)
+        .eachEntry(files, dir.EachFile)
+        .eachEntry(absDirs, dir.EachDir, true);
+    dirs.sort();
+    absDirs.sort();
+    files.sort();
+    print(dirs.#, "dir(s):", dirs);
+    print(absDirs.#, "absDir(s):", absDirs);
+    print(files.#, "file(s):", files);
+};
+
+dir.close();
+dir2.close();
+assert catch{dir.rewind()}.message.indexOf("'this'") >= 0;
+
+1 && scope {
+    var d1 = DE.cwd(), d2;
+    print('pushd ..:', DE.pushd(".."));
+    assert d1 > (d2=DE.cwd());
+    print("Current dir:", d2, "DE.dirs:",DE.dirs);
+    print('pushd ..:', DE.pushd(".."));
+    assert d2 > DE.cwd();
+    print("Current dir:", DE.cwd(), "DE.dirs:",DE.dirs);
+    print('popd:',DE.popd(), "DE.dirs:",DE.dirs);
+    assert DE.cwd() === d2;
+    print("Current dir:",DE.cwd(), "DE.dirs:",DE.dirs);
+    print('popd:',DE.popd(), "DE.dirs:",DE.dirs);
+    assert DE.cwd() === d1;
+    print("Current dir:",DE.cwd(), "DE.dirs:",DE.dirs);
+    assert 'CWAL_RC_RANGE' === catch {DE.popd()}.codeString();
+}

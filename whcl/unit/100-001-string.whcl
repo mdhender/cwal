@@ -1,0 +1,150 @@
+########################################################################
+# string-type tests.
+
+assert [info is-string #]; # is only a comment at the start of a command-line
+
+decl x "abc"
+assert $x == abc
+assert $x > ABC
+assert $x < acb
+assert 3 == [$x length]
+assert 3 == [$x length-bytes]
+assert 1 == [$x index-of b]
+
+decl -const con whcl[prototypes][String][concat]
+assert 'abcdef' == [con $x def]
+set x [x concat def]
+assert 'abcdef' == $x
+assert '_abcdefghi' == [concat "_" $x "ghi"]
+assert [x is-ascii]
+assert 100 == [x byte-at 3]
+assert 'd' == [x char-at 3]
+
+# FIXME/TODO: call chaining would simplify this
+decl u [x to-upper]
+assert 'ABCDEF' == $u
+assert 'abcdef' == [u to-lower]
+unset u
+
+set x 'a,b,c'
+decl a [x split ',']
+assert [info is-array $a]
+assert 'c' == $a[2]
+
+assert 'aXbXc' == [x replace , X]
+
+assert ',b,' == [x substr 1 3]
+assert ',c' == [x substr 3]
+
+set x '  a  '
+assert 'a' == [x trim]
+assert 'a  ' == [x trim -left]
+assert '  a' == [x trim -right]
+assert 'a' == [x trim -right -left]
+
+set x "%1$d %2$d %3$d"
+assert '1 2 3' == [x apply-format 1 2 3]
+unset x
+
+proc test-except {fmt substr} {
+    catch x {
+        decl s '%1$.1r'
+        $fmt apply-format
+    }
+    assert [info is-exception $x]
+    #echo message $x[message]
+    assert $x[code] == $xcode
+    assert [$x[message][index-of] $substr] > 0
+    # Testing other call syntax:
+    assert [$x[message] index-of $substr] > 0
+} using {
+    xcode [eval -scope {
+        decl x new whcl[Exception] MISUSE ""
+        eval $x[code]
+    }]
+}
+test-except '%1$.1r' precision
+test-except '%1$1r' width
+test-except '%1$.1R' precision
+test-except '%1$1R' width
+unset test-except
+
+if {true} {
+    decl s ""
+    set s[__prototype][test] \
+        proc {x} {return [this concat '<' $x '>']}
+
+    assert '<A>' == [s test 'A']
+    assert '<ABC>' == [s test 'ABC']
+    unset s[__prototype][test]
+}
+
+if {true} {
+    decl -const theString object s "a.txt"
+    proc check {flag glob matches} {
+        catch ex {
+            if {$matches} {
+                affirm [$glob glob-matches $flag S.s]
+                affirm [S.s matches-glob $flag $glob]
+                affirm [gm $flag $glob S.s]
+                affirm [mg $flag S.s $glob]
+            } else {
+                affirm ![$glob glob-matches $flag S.s]
+                affirm ![S.s matches-glob $flag $glob]
+                affirm ![gm $flag $glob S.s]
+                affirm ![mg $flag S.s $glob]
+            }
+        }
+        if {$ex} {
+            throw [concat $ex.message " with args " $argv]
+        }
+    } using {
+        gm "".__prototype.glob-matches
+        mg "".__prototype.matches-glob
+        S $theString
+    }
+    check -glob "*.txt" true
+    check -glob "*.TXT" false
+    check -iglob "*.TXT" true
+    check -glob "*.[tT]xt" true
+    check -glob "*.Txt" false
+    check -iglob "*.Txt" true
+    check -glob "%" false
+    check -like "%" true
+    check -like "%" true
+    check -like "a_txt" true
+    check -like "a_TXT" false
+    check -ilike "a_TXT" true
+    check -ilike "a_txt" true
+    check -ilike "a_TXT" true
+    check -ilike "axTXT" false
+
+    set theString.s "äÖü.txt"
+    check -glob "ä*.tx?" true
+    check -glob "Ä*.tx?" false
+    check -iglob "Ä*.tx?" true
+    check -glob "[äÄ]*.txt" true
+    check -glob "?[Ö]*.txt" true
+    check -glob "?[ö]*.txt" false
+    check -iglob "?[ö]*.txt" true
+    check -iglob "*[ö]*.txt" true
+    check -iglob "*ö*.txt" true
+    check -iglob "?ö*.txt" true
+    check -iglob "*[öXY]*.txt" true
+    check -like "ä%" true
+    check -like "Ä%" false
+    check -like "äÖ%" true
+    check -like "_ö%" false
+    check -like "_Ö%" true
+    check -like "%ö_.txt" false
+    check -like "%Ö_.txt" true
+    check -ilike "%ä%" true
+    check -ilike "%ü%" true
+    check -ilike "%y%" false
+    check -ilike "%Ö%Ö%" false
+    check -ilike "%Ö%" true
+    check -ilike "%ö%" true
+    check -ilike "_Ö%" true
+    check -ilike "_ö%" true
+
+}

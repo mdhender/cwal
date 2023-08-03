@@ -1,0 +1,17 @@
+/**
+   Test code for the 'json!' require.s2 plugin.
+*/
+s2.import('../require.d/require.s2')
+(['json!test',
+  'json-cached!test',
+  'json-cached!test',
+  'json!test2',
+  'json!test2' // testing caching effects
+ ],proc(j, jB, jC, j2, j3){
+     affirm j !== j2;
+     affirm j !== jB;
+     affirm jB === jC;
+     print(__FLC, 'read in JSON =',j.toJSONString(2));
+     print(__FLC, 'read in other JSON =',j2.toJSONString(2));
+     print("Caching of 'json!' plugin results is",(j3 === j2) ? "enabled." : "disabled.");
+});

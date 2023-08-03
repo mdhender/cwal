@@ -1,0 +1,21 @@
+/**
+    Sanity checks for the time plugin, which is just a proxy
+    for the (normally) built-in time API.
+*/
+const t = s2.loadModule('time.so');
+assert t;
+
+foreach(@['time', 'sleep', 'mssleep', 'strftime']=>k)
+    assert typeinfo(isfunction t[k]);
+
+var t1 = t.time();
+assert typeinfo(isinteger t1);
+assert 'CWAL_RC_MISUSE' === catch t.sleep().codeString();
+t.sleep(1);
+var t2 = t.time();
+assert t2 > t1;
+t.mssleep(1001);
+assert t.time() > t2;
+
+// We're not going to do a full strftime() test. Maybe someday.
+assert 4 === t.strftime('%Y').#;

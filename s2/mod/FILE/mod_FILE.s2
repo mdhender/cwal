@@ -1,0 +1,93 @@
+/**
+   Tests for the FILE module.
+*/
+const FILE = (s2.FILE |||
+                 (s2.loadModule2
+                  ? s2.loadModule2('FILE')
+                  : s2.loadModule('FILE.so')
+                 )
+                );
+assert typeinfo(isfunction FILE.open);
+assert 'CWAL_RC_MISUSE' === catch {FILE.open(0)}.codeString() /* non-string filename arg */;
+assert 'CWAL_RC_MISUSE' === catch {FILE.open("/dev/null", 0)}.codeString() /* non-string mode arg */;
+
+const testFile = "test.file";
+
+scope { // some basic sanity checks...
+    var f;
+    FILE.unlink(testFile,false);
+    assert 'CWAL_RC_NOT_FOUND' === catch {FILE.open(testFile, "r+")}.codeString();
+    f = 1 ? FILE.open(testFile, "w+b") : new FILE(testFile, "w+b");
+    assert !f.eof() /*strange but true for a new, empty file*/;
+    assert !f.hasError();
+    assert 'FILE' === typeinfo(name f);
+    assert testFile === f.name;
+    foreach(@['SEEK_SET', 'SEEK_END', 'SEEK_CUR']=>k){
+        const whence = f.seek[k];
+        assert typeinfo(isinteger whence);
+        f.seek(0, whence) /* will throw on error*/;
+    }
+    assert 0 === f.rewind().tell();
+    assert f === f.write("hi, ")<<"world\n";
+    assert 10 === f.tell();
+    assert 21 === (f << (new s2.Buffer() << "bye, world\n") ).tell();
+    assert 'CWAL_RC_TYPE' === catch{f.write(1)}.codeString() /* currently only writes strings and buffers */;
+    assert 21 === f.tell();
+    f.close();
+    assert 'CWAL_RC_TYPE' === catch {f.close()}.codeString() /* was already closed */;
+}
+
+scope { // Test seek(), rewind(), partial read()...
+    var f = new FILE(testFile, "r");
+    assert 0 === f.tell();
+    var b = f.read(5);
+    assert typeinfo(isbuffer b);
+    assert 'hi, w' === b.takeString();
+    //assert f === f.read(b);
+    b = f.read();
+    assert 'orld\nbye, world\n' === b.takeString();
+    f.rewind().read(3, b);
+    assert 'hi,' === b.takeString();
+
+    f.seek( 15 ).read(b);
+    assert 'world\n' === b.takeString();
+    f.seek( -6, f.seek.SEEK_END ).read(b);
+    assert 'world\n' === b.takeString();
+    f.seek( -6, f.seek.SEEK_END ).seek( 3, f.seek.SEEK_CUR ).read(b);
+    assert 'ld\n' === b.takeString();
+    f.close()
+}
+
+assert FILE.unlink(testFile);
+assert !FILE.unlink(testFile,false);
+assert 'CWAL_RC_NOT_FOUND' === catch FILE.unlink(testfile).codeString();
+
+scope { // Test eof(), clearError(), size(), and read() sizes larger than the input...
+    const fsz = s2.fs.stat(__FILE).size;
+    var f = new FILE(__FILE, "r"), b = f.read(fsz*2);
+    assert typeinfo(isbuffer b);
+    assert f.eof();
+    f.clearError();
+    assert !f.eof();
+    assert b.length() === f.size();
+    assert b.length() === fsz;
+    /* scope-local f is close()'d when the scope cleans up */
+}
+
+scope {
+    var f = new FILE(':stdout:');
+    f.write("This goes ", "to stdout via the :stdout: ", "handle.\n");
+    f.close() /* doesn't actually close stdout, just disconnects
+                 it from this script-side handle. */;
+    /* if certain debugging output is on, we should see the same addresses
+       for the same-named :XXX: handle... */
+    new FILE(':stderr:').close();
+    //new FILE(':stderr:').close();
+    //new FILE(':stderr:').close();
+    new FILE(':stdin:').close();
+    assert 'CWAL_RC_NOT_FOUND' === catch new FILE(':stdnope:').codeString()
+    /* hmmm... it's interesting (but not wrong) that the .codeString()
+       applies to the exception if the FILE ctor throws. */;
+}
+
+;;

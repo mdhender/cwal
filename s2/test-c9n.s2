@@ -1,0 +1,15 @@
+/**
+   For c9n tests.
+*/
+123;
+123.321;
+  "abc";
+    'def';
++ - ++ --;
+scope { a b c };
+<<<:abc
+def
+abc;
+/*blah*/(abc,[
+    def,{ghi + jkl}/*expecting this S2_T_NL to be retained: */
+])();

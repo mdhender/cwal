@@ -1,0 +1,22 @@
+#!/usr/bin/s2sh -v
+
+if (!s2.ffi) {
+  print('FFI appears to be disabled in this build.');
+  return -1;
+}
+
+var it = function() {
+  var i = s2.ffi.import;
+
+  // Import Headers and Libraries
+  var unistd = i(['unistd.h']);
+
+  // Execute an Imported Function
+  if (unistd.sleep(0) != 0) return -1;
+
+  return 0;
+};
+
+print("Let's give it a go...");
+var rc = it();
+print(rc != 0 ? 'Unfortunately, failed: ' + rc : 'Success!');;

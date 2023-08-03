@@ -1,0 +1,42 @@
+========================================================================
+= Building libcwal, libs2, and s2sh...
+========================================================================
+As of 2018-11-20, this tree uses autosetup
+(https://github.com/msteveb/autosetup), a TCL-based system which
+provides conventional ./configure support. It requires no extra
+software on the target system, and includes a standalone
+TCL-compatible implementation (JimTCL) for platforms without one (it
+compiles that automatically if needed).
+
+To build it:
+
+  ./configure ...flags...
+
+To see the full list of flags use:
+
+  ./configure --help
+
+After configuring...
+
+Run make from the top directory, noting that it must be GNU Make,
+which is called gmake on some systems. That will build all there
+is to build.
+
+To create the amalgamation builds (simplified distributions with a
+single header and single C file):
+
+  make amal
+
+Creates the core library amalgamation (libcwal.[ch]).
+
+========================================================================
+See also: the complete s2 manual:
+
+./s2/index.md
+
+or:
+
+https://fossil.wanderinghorse.net/r/cwal/doc/trunk/s2/index.md
+
+For more options in building a customized copy of s2sh, without
+editing its sources, see s2/manual/s2sh.md.

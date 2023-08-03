@@ -1,0 +1,2 @@
+requireS2.installModule('<hi>', 123);
+assert 123 === requireS2(['<hi>']).0;

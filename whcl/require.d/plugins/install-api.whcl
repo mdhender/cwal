@@ -1,0 +1,7 @@
+# A require.whcl plugin which passes its filename argument to
+# whcl[install-api]. So it's used like:
+#  whcl.require 'install-api!api-name' ...callback
+return object {
+    is-virtual true
+    load [proc -anon {file} {return [whcl.install-api $file]}]
+}

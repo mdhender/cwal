@@ -1,0 +1,31 @@
+#!/usr/bin/s2sh -v
+
+if (!s2.ffi) {
+  print('FFI appears to be disabled in this build.');
+  return -1;
+}
+
+var something = function() {
+  var f = s2.ffi;
+  var m = s2.ffi.map;
+
+  var dlopen = m('dlopen', [f.PTR, f.CSTR, f.INT]);
+  if (!dlopen) return -10;
+  var glHandle = dlopen('/usr/lib64/libGL.so', 2);
+  if (!glHandle) return -20;
+  var dlsym = m('dlsym', [f.PTR, f.PTR, f.CSTR]);
+  if (!dlsym) return -30;
+  var dlsym_glHandle = dlsym(glHandle, 'glGetError');
+  if (!dlsym_glHandle) return -40;
+  var glGetError = m(dlsym_glHandle, [f.INT]);
+  if (!glGetError) return -50;
+  if (glGetError() != 0) return -60;
+  var dlclose = m('dlclose', [f.INT, f.PTR]);
+  if (!dlclose) return -70;
+
+  return 0;
+};
+
+print('Here goes something...');
+var rc = something();
+print(rc != 0 ? 'Unfortunately, failed: ' + rc : 'Success!');;

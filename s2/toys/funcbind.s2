@@ -1,0 +1,48 @@
+/**
+   Demo of using operator overloading to create functions
+   which bind their 'this' to a specific value.
+
+   Usage:
+
+   var proxy = myFunc -> someObj;
+   proxy(...); // calls myFunc.apply(someObj,...).
+*/
+proc(){}/*some arbitrary function!*/
+    .prototype /* overload for ALL (current and future) Functions! */
+    .'operator->'
+    = proc(rhs){
+        affirm typeinfo(isfunction this);
+        return proc(){return this/*overridden!*/.apply(rhs, argv)}
+               using {this/*overridden!*/: this, rhs: rhs};
+    };
+
+/* That's the whole impl. What follows is the obligatory demo... */
+
+/* A function we want to bind a 'this' to: */
+const f = proc(){
+    print(__FLC, this, argv);
+    return this;
+};
+
+/* An object we want to bind to f: */
+var o = {
+    a: 1, b: 0, c: -1
+};
+
+/* Generate a binding: */
+var p = f->o;
+assert typeinfo(isfunction p);
+
+/* Call it: */
+assert o === p('hi','world');
+
+/* Ensure that the binding works via other
+   call types: */
+var o2 = {otherObject: true};
+assert o === p.apply(o2,['"this" still refers to "o"']);
+assert o === p.call(o2,'"this" still refers to "o"');
+
+/* And yet it doesn't affect f(): */
+assert f === f();
+assert o2 === f.apply(o2,['"this" refers to o2']);
+assert o2 === f.call(o2,'"this" refers to o2');

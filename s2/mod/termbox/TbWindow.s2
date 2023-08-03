@@ -1,0 +1,674 @@
+affirm typeinfo(iscallable requireS2);
+
+var mods = requireS2(['termbox/module', 'pubsub']);
+const tb = mods.shift();
+tb.PubSub = mods.shift();
+affirm typeinfo(isobject tb.PubSub);
+unset mods;
+
+//! Sort TbWindows by z-level
+const sortWindowsByZ = proc(l, r, L=l.$, R=r.$){
+            return c(L.z, R.z) ||| c(L.x, R.x) ||| c(L.y, R.y);
+} using {c: 0.compare};
+
+const $$ = enum{a}.a/* a script-local value we use as a private property key */;
+
+const TbWindow = {
+    prototype: null,
+    tb: tb,
+    __typename: 'TbWindow',
+    
+    /**
+       Creates a new window representing cells on the console screen.
+
+       If passed a window as its first argument, this new window is made
+       to be a sub-window of that window.
+
+       Any remaining arguments are expected to be the new window's
+       geometry: width, height, x, y, and z-level. Coordinates are
+       relative to the parent, if any.
+
+       If no geometry is passed in then:
+
+       A) If a parent window is provided then the the new window is
+       positioned at (1,1) and has a width/height of the parent minus
+       2 (effectively embedding the child with a 1-cell border).
+
+       B) If no parent is provided then the default coordinates are
+       (0,0) and size is that of the screen (as reported by termbox).
+    */
+    __new: proc(/* [parentWindow,] [w, h, x, y, z]*/){
+        this.tb.width(true);
+        var w, h, x, y, z = 0,
+            p = (argv.0 inherits this.prototype)
+            ? argv.shift()
+            : undefined
+        ;
+        if(p && !argv.#){
+            w = p.$.w-2;
+            h = p.$.h-2;
+            x = y = 1;
+        }else{
+            w = argv.0 ?: this.tb.width();
+            h = argv.1 ?: this.tb.height();
+            affirm typeinfo(isinteger w) && typeinfo(isinteger h);
+            x = argv.2 ?: 0;
+            y = argv.3 ?: 0;
+            z = argv.4 ?: 0;
+        }
+        affirm w>0 && h>0 /* else window is too small */;
+        this.cells = new this.tb.CellBuffer(w,h);
+        this.$ = {
+            prototype: this.prototype.$,
+            w, h, x, y, z
+        };
+        p ? p.addChild(this) : this.TopWindows.add(this);
+        this.clear();
+    },
+
+    $:{/* default properties, overridden by new instances. */
+        prototype: null,
+        fg: tb.color.yellow | tb.attr.bold,
+        bg: tb.color.black,
+        hidden: false,
+        x: 0, y: 0, z:0, w: 0, h: 0
+    },
+    
+    /**
+       Enum holding common event keys used by listen() and emit().
+    */
+    Events: enum {
+        show, close, blit, geometry
+    },
+
+    /**
+       A singleton object for managing drawing of top-level windows,
+       e.g. ensuring that they're rendered in proper z-level order.
+    */
+    TopWindows:{
+        add:proc(w){
+            const a = (this.W|||(this.W=[]));
+            if(a.indexOf(w)<0) a[] = w;
+            return this;
+        },
+        remove: proc(w){
+            const a = this.W ||| return this;
+            if((const n = a.indexOf(w))>=0) a.removeIndex(n);
+            return this;
+        },
+        present:proc(){
+            var b;
+            foreach(@(this.W|||return this).sort(Z)=>v) (b|||(b=v[$$])).blit(v);
+            T.present();
+            return this;
+        }using{$$, Z:sortWindowsByZ, T:tb}
+    },
+    
+    /**
+       If passed values, it expects (fg [,bg]) for the foreground
+       resp. background attributes. It sets those properties for
+       future cell updates and returns this object.
+       
+       If passed no arguments, it returns an object in the form {fg:
+       int, bg:int} holding the default termbox attributes used by
+       this object. Modifying them has no effect on this object.
+     */
+    attr: proc(){
+        if(argv.#){
+            this.$.fg = argv.0;
+            undefined===argv.1 || (this.$.bg = argv.1);
+            return this;
+        }
+        return {fg: this.$.fg, bg: this.$.bg};
+    },
+
+    /**
+       Resets any cells in the termbox virtual screen which overlap
+       with this window. Returns this object. This is used
+       (internally) when hiding, moving, or resizing a window.
+     */
+    /*clearFromScreen: proc(){
+        const p = this.posAbs();
+        this.cells.clearFromScreen(p.x, p.y);
+        return this;
+    },*/
+
+    /**
+       Changes the cell at position x/y to have the given character,
+       fg, and bg. fg/bg default to this window's default fg/bg.
+
+       Returns this object.
+    */
+    cell: proc(x,y,ch=0,fg,bg){
+        affirm typeinfo(isinteger x);
+        affirm typeinfo(isinteger y);
+        this.cells.cell(x, y, ch, fg?:this.$.fg, bg?:this.$.bg);
+        return this;
+    },
+
+    /**
+       If passed no arguments, returns an object in the form {x,y,z} -
+       the coordinates of this window, relative to its own parent (or
+       the screen if it has none).
+
+       If passed parameters, they set this window's x, y, and z
+       level and this window is returned.
+
+       After moving, it emits an Events.geometry event with no arguments.
+    */
+    pos: proc(/*x,y,z*/){
+        if(argv.#){
+            this[$$].clearFromScreen(this);
+            this.$.x = +argv.0;
+            this.$.y = +argv.1;
+            this.$.z = +argv.2;
+            this.emit(this.Events.geometry);
+            return this;
+        }
+        return {
+            x: this.$.x,
+            y: this.$.y,
+            z: this.$.z
+        };
+    } using($$),
+
+    /**
+       If passed no arguments, returns this window's z-level. If
+       passed arguments, it sets the z-level:
+
+       - If the 2nd arg is false, z is used as-is.
+
+       - If the 2nd arg is true, the z-level is adjusted by the given
+       z.
+
+       i.e. the first form makes an absolute modification and the
+       second form a relative modification.
+    */
+    zLevel: proc(z,r=false){
+        if(argv.#){
+            this.$.z = r ? this.$.z + z : z;
+            return this;
+        }
+        return this.$.z;
+    },
+
+    /**
+       Adjusts this window's position by the given
+       relative x, y, and/or z amounts.
+    */
+    moveBy: proc(x, y, z){
+        return this.pos( this.$.x + x, this.$.y + y, this.$.z + z);
+    },
+
+    /**
+       If passed no args, returns an object in the form {w:X, h:X},
+       where w and h are the width resp.  height of this window.
+
+       If passed args, it clears its current bytes from termbox's
+       virtual screen, resizes the window to the given
+       dimensions, then emits an Events.geometry event, passing it
+       no arguments.
+    */
+    size: proc(w,h){
+        if(argv.#){
+            //w = +w; h = +h;
+            affirm w>0 && h>0;
+            this[$$].clearFromScreen(this).cells.size(w,h);
+            this.$.w = w;
+            this.$.h = h;
+            this.emit(this.Events.geometry);
+            return this;
+        }
+        return { w: this.$.w, h: this.$.h };
+    } using($$),
+
+    width: proc(/*w*/){
+        if(argv.#){
+            this.size( argv.0, this.cells.height() );
+            return this;
+        }
+        return this.$.w;
+    },
+
+    height: proc(/*h*/){
+        if(argv.#){
+            this.size( this.cells.width(), argv.0 );
+            return this;
+        }
+        return this.$.h;
+    },
+    
+    removeChild: proc(ch){
+        affirm ch inherits this.prototype;
+        this.children || return this;
+        if((const i = this.children.indexOf(ch)) >= 0){
+            ch[$$].clearFromScreen(ch);
+            this.children.removeIndex(i);
+            unset ch.parent;
+            this.TopWindows.add(ch);
+        }
+        return this;
+    } using($$),
+
+    /**
+       Makes ch a sub-window of this window, removing it from its
+       parent (if any) before doing so. This is a harmless no-op
+       if ch is already a child of this window.
+
+       Note that the coordinates of ch are not modified by this
+       operation.
+    */
+    addChild: proc(ch){
+        affirm ch inherits this.prototype;
+        ch.parent === this && return this;
+        ch.parent && ch.parent.removeChild(ch);
+        this.children || (this.children = []);
+        this.TopWindows.remove(ch);
+        ch.parent = this;
+        affirm this.children.indexOf(ch)<0;
+        this.children[] = ch;
+        unset ch.blitBuffer;
+        return this;
+    },
+
+    /**
+       Returns this window's absolute (screen-relative) position as an
+       Object with the properties x, y, and z. Note, however, that its
+       z-level is relative only to its parent, as we have no(?)
+       reasonable way to re-map z-levels globally.
+    */
+    posAbs: proc(){
+        var x = 0, y = 0, w = this;
+        while(w){
+            x += w.$.x;
+            y += w.$.y;
+            w = w.parent;
+        }        
+        return {x, y, z: this.$.z};
+    },
+
+    /**
+       If called with no arguments, returns this object's geometry as
+       an object with the properties (x,y,z,w,h).
+
+       If called with an object parameter, it is assumed to be
+       an Object with the same properties as this function returns when
+       passed no arguments.
+
+       If passed 2 or more arguments, they are assumed to be geometry
+       coordinates in this order: (x, y, [z [, w, h]])
+    */
+    geometry: proc(/*object|2, 3, or 5 integers*/){
+        if(const n = argv.#){
+            this.$.freezeEvents = true;
+            const ex = catch {
+                if(typeinfo(isobject const o=argv.0) ){
+                    this.pos(o.x, o.y, o.z).size(o.w, o.h);
+                    return this;
+                }else if(n>1){
+                    this.pos(argv.0, argv.1, argv.2?:this.$.z);
+                    if(n>3) this.size(argv.3, argv.4);
+                }else{
+                    throw "Don't know how to handle these arguments.";
+                }
+            }
+            unset this.$.freezeEvents;
+            ex ? throw ex : return this.emit(this.Events.geometry);
+        }
+        const o = this.$;
+        return {z: o.z, y: o.y, x: o.x, w: o.w, h: o.h};
+    },
+
+    /**
+       Returns this object's top-most parent object, or this object if
+       it has no parent.
+    */
+    topParent:proc(){
+        var w = this;
+        for( ; w.parent; w = w.parent );
+        return w;
+    },
+
+    /**
+       Tells ALL non-hidden windows to render any pending changes made
+       to the virtual screen, dumping them to the terminal. We have to
+       do them all to avoid artifacts/screen "corruption" during
+       certain screen state changes.
+
+       Returns this object.
+    */
+    present:proc(){
+        this.TopWindows.present();
+        //this.$.hidden && return this;
+        //this.emit(this.Events.present);
+        //b && this.topParent().blit();
+        //this.tb.present();
+        return this;
+    },
+
+    /**
+       Sets the visibility of this window to on or off.  A hidden
+       window is not rendered during blit(), nor are any of its
+       children rendered.
+
+       Emits an Events.show event after changing the state, passing it
+       the same boolean value passed to this function.
+     */
+    show: proc(y=true){
+        (this.$.hidden = !y) && this[$$].clearFromScreen(this);
+        this.emit(this.Events.show, !!y);
+        return this;
+    } using($$),
+
+    /**
+       Sets the "reverse" attribute bit on or off for up-coming
+       operations which use this window's default fg/bg.
+
+       If passed no arguments, it toggles reversed bit on the current
+       fg/bg attributes for this window but does not modify any
+       already-drawn screen cells.
+
+       Passing it a truthy first argument turns on the reversed bit.
+       Passing it a false first argument turns off the reversed bit.
+       Passing the undefined value for the first argument toggles the
+       current fg/bg exactly as if no arguments were passed.
+
+       If passed a truthy value for the 2nd parameter, the
+       already-drawn foreground and background for all cells in the
+       window are also reversed. If passed a falsy value (the
+       default), default they are not.
+
+       This does not update the screen: a call to present() (or
+       equivalent) will be needed to see the changes.
+    */
+    reverseAttr:proc(r,x=false){
+        const R = this.tb.attr.reverse, $ = this.$;
+        foreach(@[#'fg','bg']=>a){
+            if(undefined===r){
+                if($[a] & R) $[a] &= ~R;
+                else $[a] |= R;
+            }
+            else if(r) $[a] |= R;
+            else $[a] &= ~R;
+        }
+        x && this.cells.reverseAttr();
+        return this;
+    },
+
+    /**
+       Fills the window with the given character (integer UTF code
+       point or a string (only the first character is used)). If fg
+       and bg are not passed in, this object's default fg/bg are used.
+
+       Returns this object.
+    */
+    fill: proc(char=0, fg, bg){
+        undefined===fg && (argv.1=this.$.fg);
+        undefined===bg && (argv.2=this.$.bg);
+        this.cells.fill(@argv);
+        return this;
+    },
+
+    /**
+       Fills in the given rectangle of this window's cells using the
+       given character, fg, and bg. The character may be integer
+       unicode code points or a string (only the first character is
+       used). The fg/bg default to this window's defaults.
+     */
+    fillRect: proc(x, y, w, h, char=0, fg, bg/*fg = this.$.fg, bg=this.$.bg*/){
+        undefined===fg && (argv.5=this.$.fg);
+        undefined===bg && (argv.6=this.$.bg);
+        this.cells.fillRect(@argv);
+        return this;
+    },
+
+    /**
+       Draws a box around this window. The legal values for the first
+       2 parameters are 0, 1, and 2, for borderless, single-line
+       borders, or double-line borders, respectively.
+
+       If fg and bg are not passed in, this object's default fg/bg are
+       used.
+
+       Returns this object.
+     */
+    boxIn:proc(top=1,sides=1, fg, bg/*fg=this.$.fg, bg=this.$.bg*/
+               /* bug? Resolving this.$.fg/bg ^^^^^ from the prototype?!?!?
+                  clear() is not doing that.
+                */){
+        undefined===fg && (argv.2=this.$.fg);
+        undefined===bg && (argv.3=this.$.bg);
+        this.cells.boxIn(@argv);
+        return this;
+    },
+
+    /**
+       Draws a box around this window. h and v are the characters to
+       use for the horizontal resp. vertical borders. This routine
+       "tries" to figure out useful corner characters for various
+       values of h and v. The characters may be integer unicode code
+       points or a string (only the first character is used).
+
+       Returns this object.
+    */
+    boxIn2:proc(h, v, fg, bg){
+        undefined===fg && (argv.2=this.$.fg);
+        undefined===bg && (argv.3=this.$.bg);
+        this.cells.boxIn2(@argv);
+        return this;
+    },
+
+    /**
+       Draws a vertical scrollbar at the given coordinates. The scroll
+       indicator is calculated from the 4th and 5th parameters: the 4th
+       must be the maximum number of rows in the being-scrolled data
+       and the 5th is the number of the row we are currently viewing.
+       e.g. passing (100,1) would indicate 1% and (100,90) would indicate
+       90%.
+
+       Returns this object.
+    */
+    scrollBarV:proc(/*x, y, barHeight, rowCount, currentRow*/){
+        this.cells.scrollBarV(@argv);
+        return this;
+    },
+
+    /**
+       Works like scrollBarV() except that it renders a horizontal
+       scrollbar and the input range is a number of columns instead
+       of rows.
+
+       Returns this object.
+    */
+    scrollBarH:proc(/*x, y, w, colCount, currentCol*/){
+        this.cells.scrollBarH(@argv);
+        return this;
+    },
+
+    /**
+       Clears all cells of this window. The parameters represent
+       the new fg/bg values.
+     */
+    clear:proc(fg=this.$.fg, bg=this.$.bg){
+        this.cells.fill(0, fg, bg);
+        return this;
+    },
+
+    clearLine: proc(line){
+        this.cells.clearLine(line);
+        return this;
+    },
+
+    print3:proc(x,y,…=affirm !"requires 3+ args"){
+        argv.shift(2);
+        this.cells.print5(x,y,this.$.fg, this.$.bg, @argv);
+        return this;
+    },
+
+    print5:proc(x,y,fg,bg,…=affirm !"requires 5+ args"){
+        (undefined===fg || fg<0) && (fg=this.$.fg);
+        (undefined===bg || bg<0) && (bg=this.$.bg);
+        argv.shift(4);
+        this.cells.print5(x,y,fg,bg,@argv);
+        return this;
+    },
+
+    /**
+       Draws a vertical line from the given x/y to x/toY. The 4th
+       and 5th parameters are the fg/bg attributes, defaulting to
+       this window's current fg/bg.
+
+       Returns this object.
+     */
+    lineV:proc(x, y, toY, fg, bg){
+        this.cells.lineV(x, y, toY, fg?:this.$.fg, bg?:this.$.bg);
+        return this;
+    },
+
+    /**
+       Draws a horizontal line from the given x/y to toX/y. The 4th
+       and 5th parameters are the fg/bg attributes, defaulting to
+       this window's current fg/bg.
+
+       Returns this object.
+     */
+    lineH:proc(x, y, toX, fg, bg){
+        this.cells.lineH(x, y, toX, fg?:this.$.fg, bg?:this.$.bg);
+        return this;
+    },
+
+    /**
+       Hides this window and destroys all resources and internal data
+       used by this object, including native-level screen cell
+       buffers. This also closes all subwindows.
+
+       Emits a Events.close event before closing.
+
+       After calling this, the object should no longer be used. It is provided
+       primarily as a way to force immediate cleanup of C-level resources.
+    */
+    close:proc(){
+        this.emit(this.Events.close);
+        this[$$].clearFromScreen(this);
+        if(this.parent) this.parent.removeChild(this);
+        this.TopWindows.remove(this);
+        affirm undefined===this.parent;
+        this.children && while( const c = this.children.pop() ) c.close();
+        this.cells && this.cells.destroy();
+        this.blitBuffer && this.blitBuffer.destroy();
+        this.$ = {prototype:this.prototype.$};
+        unset this.children, this.cells, this.blitBuffer;
+    } using($$),
+
+    /**
+       Installs function f as a callback for events of type e.
+       Returns a unique key which can be passed to unlisten()
+       to unsubscribe from events. See emit() and unlisten()
+       for more details.
+    */
+    listen: proc(e, f){
+        this.$.e || (this.$.e=new this.tb.PubSub());
+        return this.$.e.sub(e, f);
+    },
+
+    /**
+       Expects that k was obtained as the result of a call to
+       listen(). Unsubscribes the given listener. Returns this object.
+     */
+    unlisten: proc(k){
+        this.$.e && this.$.e.unsub(k);
+        return this;
+    },
+
+    /**
+       Publishes event e to all listen()ers of event type e. Any
+       arguments, including e, are passed on to each listener. In the
+       context of all listener callbacks, 'this' is the object on
+       which emit() is called.
+    */
+    emit: proc(e){
+        //typeinfo(isunique e) && (e = e.value);
+        this.$.freezeEvents && return;
+        this.$.e || return this;
+        this.$.e.pubWithThis(e, this, @argv);
+        return this;
+    }
+};
+
+/*
+  TbWindow.present.useBuffer tells the window class whether to use a
+  rendering buffer during blitting. Mainly useful for ensuring that so
+  that subwindows don't write anything outside the bounds of their
+  parents (if you consider that a feature). If false, blitting is
+  done directly to termbox, which is faster but has slightly different
+  display characteristics (e.g. it allows subwindows to render outside
+  of their parents' bounds).
+*/
+TbWindow.present.useBuffer = true
+;
+
+
+TbWindow[$$] = { /* some private parts of TbWindow */
+    clearFromScreen: proc(w){
+        const p = w.posAbs();
+        w.cells.clearFromScreen(p.x, p.y);
+        return w;
+    },
+    
+    /**
+       "Blits" (to use the term very losely) the contents of window
+       argv.0 and any subwindows to the termbox virtual screen, but
+       does not update the physical screen (use tb_present() for
+       that).  It is internally passed a window as its first argument.
+       The other arguments are intended for use only by this function,
+       in recursion of subwindow rendering. If the window is hidden,
+       this function has no side-effects.
+    */
+    blit: proc F(/*window*/){
+        this = argv.0;
+        this.$.hidden && return this;
+        this.emit(this.Events.blit);
+        var dX = +argv.1, dY = +argv.2;
+        const started = (1===argv.#),
+              P = this.parent,
+              buf = argv.3 ?: (this.present.useBuffer ? B(this) : null)
+        ;
+        if(started && P){
+            // we need an absolute coordinate
+            const p = this.posAbs();
+            //throw p;
+            dX = p.x - this.$.x; dY = p.y - this.$.y;
+        }
+        if(buf){
+            affirm buf inherits this.cells.prototype;
+            P || (affirm buf.width() === this.$.w && buf.height() === this.$.h);
+            P || affirm buf === this.blitBuffer;
+            if(P){
+                this.cells.drawTo( buf, this.$.x+dX, this.$.y+dY );
+            }else{
+                this.cells.drawTo( buf, 0, 0 );
+            }
+        }else{
+            this.cells.blit(this.$.x+dX, this.$.y+dY);
+        }
+        if(!started || !buf){
+            dX += this.$.x;
+            dY += this.$.y;
+        }
+        this.children &&
+            foreach(@this.children.sort(Z)=>c) c.$.hidden || F(c, dX, dY, buf);
+        started && buf && buf.blit(buf.p.$.x, buf.p.$.y);
+        return this;
+    } using {
+        Z:sortWindowsByZ,
+        //! Returns a CellBuffer owned by w's top-most parent.
+        B:proc (w){
+            var p = w.topParent(), b = p.blitBuffer;
+            if(!b) b = p.blitBuffer = new w.tb.CellBuffer(p.$.w, p.$.h){this.p=p};
+            else if(p===w) b.size(p.$.w, p.$.h);//.fill(0,0,0);
+            return b;
+        }
+    }
+};
+
+TbWindow;

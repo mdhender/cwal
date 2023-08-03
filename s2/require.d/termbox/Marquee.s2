@@ -1,0 +1,146 @@
+
+/**
+   Returns a utility class implementing a simple scrolling text marquee
+   rendered on a termbox Pad or Window.
+
+   Reminder to self: please keep module working for both the older
+   tb.Window class and newer script-side replacement. Eventually i'd
+   like to nuke the older (native-side) class.
+*/
+return requireS2(['termbox/module'], proc(tb){
+    /**
+       Experimenting with a scrolling marquee message, as seen in
+       certain 1980's text-mode games.
+
+       It is modelled as a plain Object which gets assigned
+       a window upon which to draw its marquee text.
+
+       TODOs:
+
+       - Support a callback between iterations, e.g. to change
+       the message.
+    */
+    return {
+        tb: tb,
+        __typename: 'Marquee',
+        /**
+           Constructor.
+
+           viewWin = termbox Pad or Window instance (required). Note
+           that a marquee on a Pad is not all that useful unless
+           the pad is flushed to a view window whenever the marquee
+           is tick()'d.
+
+           x = x offset of viewWin to draw on
+
+           y = y offset (line number) of viewWin to draw on. The
+           marquee never spans lines.
+
+           width = max width to use, starting at offset x. Default is
+           to use (viewWin.width()-x).
+
+           fg and bg are optional fg/bg attributes. By default those
+           of the view window are used.
+
+           After construction, call setMessage() to set up the message
+           text. If you want to use multiple messages, each of which
+           gets displayed in order, assign an array of strings to
+           this object's 'messages' property.
+
+           Missing feature: it cannot be moved/resized after
+           construction.
+        */
+        __new: proc(viewWin,x=0,y=0,width=0, fg, bg){
+            affirm typeinfo(isnewing);
+            affirm this.tb /* via the prototype */;
+            affirm typeinfo(isfunction viewWin.print3);
+            //affirm viewWin inherits this.tb.Window;
+            const vw = viewWin.width();
+            this.vw = width ||| (vw-x);
+            affirm this.vw >= 4 /* minimal useful width */;
+            this.view = viewWin;
+            this.xoff = x;
+            this.yoff = y;
+            this.vw > vw && (this.vw = (vw-x)); 
+            this.vh = 1;
+            this.spos = 0; // current cursor position
+            this.fg = fg;
+            this.bg = bg;
+            this.lineFormat = "%1$-"+this.vw+"."+this.vw+"s";
+            this.msgPadFormat = "%1$."+this.vw+"c%2$s";
+        },
+
+        /**
+           Sets the current message and resets the marquee.
+
+           If arg is an array, then it behaves differently: the array
+           is assumed to be a list of strings to use as messages.
+           This array replaces the this.messages property. If
+           arg.index is set, it is used as the array index of the
+           message to display first, defaulting to index 0. If this
+           function is passed a 2nd argument, that is used as the
+           starting message index instead. Each message gets rendered in its
+           in-array order, starting at the aforementioned index and
+           wrapping around to 0 at the end.
+
+           Returns this object.
+        */
+        setMessage: proc(arg){
+            /* Rather than fiddle with offsets and filler/padding when
+               updating the display, we'll just pad the message so
+               that it displays how we want. */
+            if(typeinfo(isarray arg)){
+                this.messages = arg;
+                argv.#>1 && (arg.index = +argv.1);
+                arg = arg.0;
+                return;
+            }
+            affirm typeinfo(isstring arg);
+            this.msg = this.msgPadFormat.applyFormat(' ', arg);
+            this.spos = 0;
+            this.view.print5(this.xoff, this.yoff, this.fg, this.bg,
+                             this.lineFormat.applyFormat("")).present();
+            return this;
+        },
+
+        /**
+            If this.messages is an array, this routine sets the
+            current message to the next item in that array (starting
+            at index 0 and wrapping around at the end).
+
+            Returns this object.
+        */
+        nextMessage: proc callee(){
+            const m = this.messages;
+            typeinfo(isarray m) || return this;
+            const n = m.#;
+            n || return this.setMessage("Use setMessage() to set a marquee message!");
+            m.index ?: (m.index = 0);
+            (m.index>=n) && (m.index = 0);
+            return this.setMessage(this.messages[m.index++])
+        },
+
+        /**
+           Increments the marquee by one character, updating the
+           target window's state but not present()ing the
+           screen. termbox.present() will be necessary to get updates
+           to appear. It is not done here to avoid multiple refreshes
+           during event handlers.
+
+           Returns this object.
+        */
+        tick: proc(){
+            if(!typeinfo(isstring this.msg)){
+                this.messages ? this.nextMessage() : this.setMessage("Use setMessage() to set a marquee message!")
+            }
+            this.view.print3(this.xoff, this.yoff,
+                             this.lineFormat.applyFormat(
+                                 this.msg.substr( this.spos++ >= this.msg.# ? this.spos = 0 : this.spos )
+                             ))
+            ;
+            if(!this.spos && this.messages) this.nextMessage();
+            return this;
+        }
+
+    };
+});

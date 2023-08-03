@@ -1,0 +1,75 @@
+decl -const ob [whcl install-api ob]
+
+decl -const pushExtra 1
+decl -const origOBLevel [ob level]
+if {$pushExtra} {ob push}
+
+########################################################################
+# In order to generate HTTP-compatible output, cgi must buffer all
+# output. It does this using the s2_ob (output buffering) API.  This
+# means that it can capture output sent to cwal_engine_output(),
+# i.e. all (properly) script-generated output. HOWEVER, in order to do
+# that we need to ensure that at least 1 buffer layer is in place
+# (beyond the one we pushed above, which exists to capture all of the
+# CGI output, including the headers).
+#
+# The CGI module rembers the init()-time ob.level() and assumes that
+# it may manage all levels pushed after that, in terms of flushing
+# their output and eventually popping them if script code fails to do
+# so.
+
+decl -const cgi (whcl.cgi
+               || (([[whcl.install-api].index-of cgi]>=0)
+                   && [whcl.install-api cgi])
+               || [whcl.load-module 'cgi.so'])
+
+cgi init object {
+    pushOb false
+    importEnv true
+}
+
+affirm [ob level] > ($origOBLevel + (($pushExtra && 1) || 0))
+
+cgi set-content-type "will be replaced"
+cgi http-status 837 "Optional comment"
+
+decl -const Headers object {
+    XLastGrognified "X-Last-Grognified"
+}
+
+cgi set-header CONTENT-TYPE 'text/plain'
+cgi set-header Headers.XLastGrognified [cgi header-timestamp]
+
+decl -const bodyText "This is the body.\n"
+echo -n $bodyText
+
+cgi respond; # this cleans up all native state, so further calls to
+             # cgi member functions will throw.
+
+affirm CWAL_RC_TYPE == [[catch {cgi respond}].code-string]
+affirm [ob level] == (($pushExtra && 1) || 0)
+
+decl b ($pushExtra && [ob pop -1])
+affirm 0 == [ob level]
+if {$pushExtra} {affirm [info is-string $b]}
+if {$b} {
+    echo "Captured" [b length] 'bytes of response output:'
+    echo $b
+    affirm [b index-of "Status: 837 Optional comment"] >= 0
+    # Headers added via setHeader() are internally normalized to lower
+    # case:
+    affirm [b index-of "content-type: text/plain"] > 0;
+    affirm [b matches-glob "*x-last-grognified: [SMTWF]*"]
+    affirm [b.index-of $bodyText] > 0
+    if {true} {
+        decl splitPos [b index-of "\r\n\r\n"]
+        affirm $splitPos > 0;
+        decl body [b substr ($splitPos + 4)]
+        decl head [b substr 0 $splitPos]
+        #echo [concat "bodyText<<" $bodyText ">>"]
+        #echo [concat "body    <<" $body ">>"]
+        affirm $bodyText == $body
+        echo "============= BODY:\n" $body
+        echo "============= HEADERS:\n" $head "\n^^^ (one NL added)\n"
+    }
+}

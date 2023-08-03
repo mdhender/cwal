@@ -1,0 +1,217 @@
+/* Goal-less experimentation with a mini-ORM... */
+const SQ3 = s2.import('bootstrap.s2');
+const uORM = proc(db){
+    return {
+        prototype: null,
+        db: db,
+        Buffer: s2.Buffer
+    };
+}(new SQ3(":memory:", "T"));
+
+uORM.Table = {
+    prototype: uORM,
+    buffer: new uORM.Buffer(),
+
+    __new: proc(name = throw "Table name is required"){
+        affirm typeinfo(isnative this.db) /* via prototype */;
+        const fld = this.fields = [];
+        const buf = this.buffer.reset();
+        var stmt = this.db.prepare("select * from ["+name+"]");
+        var i = 0;
+        buf << "enum {";
+        foreach(@stmt.columnNames=>k){
+            (++i > 1) && buf << ", ";
+            buf << (fld[] = k.toUpper())
+                << ': "' << k <<  '"'
+        }
+        unset stmt, i;
+        buf << "}";
+        this.fKey = buf.evalContents("Field enum for ["+name+"].");
+        buf.reset();
+        this.__typename = 'Table:'+name;
+        this.name = name;
+        this.Record = Record(this);
+        affirm typeinfo(cannew this.Record);
+    } using {
+        Record: proc(table){
+            const rc = {
+                prototype: table,
+                __typename: 'Record:'+table.name,
+                __new: rproto.__new
+            };
+            foreach(rproto=>k,v) rc[k] = v;
+            return rc;
+        } using {
+            rproto:{
+                __new: proc(){
+                    affirm typeinfo(isarray this.fields)/*via prototype*/;
+                    this.reset();
+                    if(argv.0){
+                        const t = argv.0;
+                        affirm typeinfo(istuple t) || typeinfo(isarray t);
+                        affirm this.fields.# === t.# /* else field count mismatch */;
+                        foreach(@this.fields => i, k){
+                            this.setF( i, t[i] );
+                        }
+                    }
+                },
+
+                reset: proc(){
+                    this.v = {prototype:null};
+                },
+
+                getF: proc x(key, default){
+                    typeinfo(isinteger key) && (key = this.fKey[this.fields[key]]);
+                    affirm typeinfo(isunique key);
+                    this.fKey[key] /* will throw on mismatch */;
+                    return x.hasOwnProperty.call(this.v, key) ? this.v[key] : default;
+                },
+
+                setF: proc(key, val){
+                    typeinfo(isinteger key) && (key = this.fKey[this.fields[key]]);
+                    affirm typeinfo(isunique key);
+                    this.fKey[key] /* will throw on mismatch */;
+                    this.v[key] = val;
+                    return this;
+                },
+
+                loadOne: proc(where, bind){
+                    var buf = this.sqlSelect();
+                    where && buf << ' ' << where;
+                    return new this.prototype(
+                        this.db.prepare(buf).bind(bind).stepTuple()
+                        ||| return/*Ha!*/
+                    );
+                },
+
+                toObject: proc(){
+                    const rc = {};
+                    foreach(@this.fields=>k) rc[k] = this.v[this.fKey[k]];
+                    return rc;
+                },
+                toHash: proc(){
+                    const rc = {#};
+                    foreach(@this.fields=>k) rc.insert(k, this.v[this.fKey[k]]);
+                    return rc;
+                },
+                toArray: proc(){
+                    const rc = [];
+                    foreach(@this.fields=>k) rc[] = this.v[this.fKey[k]];
+                    return rc;
+                },
+                toTuple: proc(){
+                    const rc = new [#].prototype(this.fields.#);
+                    foreach(@this.fields=>i,k) rc[i] = this.v[this.fKey[k]];
+                    return rc;
+                }
+            }
+        }/*Record class*/
+    }/*Table ctor*/,
+
+    sqlCreateOne: proc(qMarks){
+        const buf = new this.Buffer();
+        buf << "INSERT INTO [" << this.name << "] (["
+            << this.fields.join('], [')
+            << "]) VALUES(";
+        var i = 0, comma;
+        foreach(@this.fields=>v){
+            comma && buf << ", ";
+            buf << (qMarks ? "?"+(++i) : "$"+v);
+            comma || (comma=true);
+        }
+        buf << ")";
+        return buf;
+    },
+
+    sqlSelect: proc(whereClause){
+        const buf = new this.Buffer();
+        buf << "SELECT ";
+        var comma = 0;
+        foreach(@this.fields=>k){
+            comma && buf << ", ";
+            buf << "["<<k<<"] "; // "["<<this.fKey[k].value<<"] ["<<k<<"] ";
+            comma=true;
+        }
+        buf << "FROM ["+this.name+"]";
+        whereClause && (buf << " " << whereClause);
+        return buf;
+    },
+
+    eachRecord: proc(cb){
+        affirm typeinfo(isfunction cb);
+        const self = this;
+        this.db.each({
+            prototype: eachOpt,
+            sql: this.sqlSelect()
+        });
+    } using ({
+        eachOpt:{
+            prototype: undefined,
+            mode: 't',
+            each:proc(){
+                return cb(new self.Record(this));
+            }
+        }
+    })
+};
+
+scope {
+    const U = uORM, db = U.db;
+
+    db.exec("create table t(a,b)",
+            "insert into t(a,b) values('hi','there'),('yo','here')");
+
+    var t = new U.Table('t');
+    print(__FLC,'Table =',t);
+    print(__FLC,'fields =',t.fields);
+    print(__FLC,'fKey =',t.fKey);
+    foreach(@t.fields=>k){
+        print('\t',k,'=',t.fKey[k].value);
+    }
+    var r = new t.Record();
+    affirm r inherits t;
+    r.setF( t.fKey.A, 1 )
+        .setF( t.fKey.B, 2 );
+    assert catch r.field( t.fKey.NoSuchField, 1 );
+    affirm typeinfo(isarray r.fields);
+    print(__FLC,'vals:',r.v);
+    foreach(@t.fields=>k){
+        print('\t',k,' = ',r.v[t.fKey[k]]);
+    }
+
+
+    print(t.sqlCreateOne(false).takeString());
+    print(t.sqlCreateOne(true).takeString());
+    print(t.sqlSelect().takeString());
+
+    var r2 = r.loadOne( 'order by a desc' );
+    unset r;
+    print(__FLC,'vals:',r2.v);
+    foreach(@t.fields=>k){
+        print('\t',k,' = ',r2.v[t.fKey[k]]);
+    }
+    unset r2;
+    t.eachRecord(proc(r){
+        print("%1$p: ".applyFormat(r), r.toObject(), r.toTuple());
+        /*foreach(@r.fields=>i,k){
+            print('\t',r.fKey[k],'=',k,'=',r.getF(i));
+        }*/
+    });
+
+    db.exec("create table ☺(☺)",
+            "insert into ☺(☺) values('hi'),('hey'),('bye'),('shoes'),('done')");
+    const tS = new U.Table('☺');
+    print(__FLC,tS.sqlCreateOne(false).takeString());
+    db.selectValue(tS.sqlCreateOne(false),{$☺: 'bound by name'});
+    db.selectValue(tS.sqlCreateOne(true),'bound by index');
+    //print(tS.sqlCreateOne(true).takeString());
+    //print(tS.sqlSelect().takeString());
+    tS.eachRecord(proc(r){
+        print("%1$p: ".applyFormat(r), r.toObject(), r.toTuple());
+        /*foreach(@r.fields=>i,k){
+            print('\t',r.fKey[k],'=',k,'=',r.getF(i));
+        }*/
+        //return false;
+    });
+
+};

@@ -1,0 +1,110 @@
+#!/usr/bin/s2sh -v
+
+var f = s2.ffi;
+var e = s2.ffi.exec;
+
+var glHandle = e('dlopen', [ f.PTR, f.CSTR, f.INT ], '/usr/lib64/libGL.so', 2);
+var glShadeModel = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glShadeModel');
+var glClearColor = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glClearColor');
+var glClearDepth = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glClearDepth');
+var glEnable = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glEnable');
+var glDepthFunc = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glDepthFunc');
+var glHint = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glHint');
+var glViewport = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glViewport');
+var glMatrixMode = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glMatrixMode');
+var glClear = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glClear');
+var glLoadIdentity = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glLoadIdentity');
+var glTranslatef = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glTranslatef');
+var glRotatef = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glRotatef');
+var glBegin = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glBegin');
+var glColor3f = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glColor3f');
+var glVertex3f = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glVertex3f');
+var glEnd = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glHandle, 'glEnd');
+
+var glutHandle = e('dlopen', [ f.PTR, f.CSTR, f.INT ], '/usr/lib64/libglut.so', 2);
+var glutInit = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutInit');
+var glutInitDisplayMode = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutInitDisplayMode');
+var glutInitWindowSize = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutInitWindowSize');
+var glutDisplayFunc = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutDisplayFunc');
+var glutReshapeFunc = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutReshapeFunc');
+var glutKeyboardFunc = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutKeyboardFunc');
+var glutSpecialFunc = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutSpecialFunc');
+var glutCreateWindow = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutCreateWindow');
+var glutMainLoop = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutMainLoop');
+var glutSwapBuffers = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutSwapBuffers');
+var glutFullScreen = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutFullScreen');
+var glutReshapeWindow = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutReshapeWindow');
+var glutPostRedisplay = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutPostRedisplay');
+var glutDestroyWindow = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], glutHandle, 'glutDestroyWindow');
+var glutWindow;
+
+var gluHandle = e('dlopen', [ f.PTR, f.CSTR, f.INT ], '/usr/lib64/libGLU.so', 2);
+var gluPerspective = e('dlsym', [ f.PTR, f.PTR, f.CSTR ], gluHandle, 'gluPerspective');
+
+var DisplayFunc = function() {
+  e(glClear, [ f.VOID, f.INT ], 0x00004000 | 0x00000100);
+
+  e(glRotatef, [ f.VOID, f.FLOAT, f.FLOAT, f.FLOAT, f.FLOAT ], 0.5, 0.0, 1.0, 0.0);
+  e(glBegin, [ f.VOID, f.INT ], 4);
+  e(glColor3f, [ f.VOID, f.FLOAT, f.FLOAT, f.FLOAT ], 1.0, 0.0, 0.0);
+  e(glVertex3f, [ f.VOID, f.FLOAT, f.FLOAT, f.FLOAT ], 0.0, 1.0, 0.0);
+  e(glColor3f, [ f.VOID, f.FLOAT, f.FLOAT, f.FLOAT ], 0.0, 1.0, 0.0);
+  e(glVertex3f, [ f.VOID, f.FLOAT, f.FLOAT, f.FLOAT ], -1.0, -1.0, 0.0);
+  e(glColor3f, [ f.VOID, f.FLOAT, f.FLOAT, f.FLOAT ], 0.0, 0.0, 1.0);
+  e(glVertex3f, [ f.VOID, f.FLOAT, f.FLOAT, f.FLOAT ], 1.0, -1.0, 0.0);
+  e(glEnd);
+
+  e(glutSwapBuffers);
+  e(glutPostRedisplay);
+};
+
+var ReshapeFunc = function(w, h) {
+  e(glViewport, [ f.VOID, f.INT, f.INT, f.INT, f.INT ], 0, 0, w, h);
+  e(glMatrixMode, [ f.VOID, f.INT ], 0x1701);
+  e(glLoadIdentity);
+  e(gluPerspective, [ f.VOID, f.DOUBLE, f.DOUBLE, f.DOUBLE, f.DOUBLE ], 80, w / h, 1.0, 5000.0);
+  e(glTranslatef, [ f.VOID, f.FLOAT, f.FLOAT, f.FLOAT ], 0.0, 0.0, -10.0);
+  e(glMatrixMode, [ f.VOID, f.INT ], 0x1700);
+  e(glLoadIdentity);
+};
+ReshapeFunc.prototype.ffiTypes = [ f.VOID, f.INT, f.INT ];
+
+var KeyboardFunc = function(key, x, y) {
+  if (key == 27) {
+    e(glutDestroyWindow, [ f.VOID, f.INT ], glutWindow);
+
+    e('dlclose', [ f.INT, f.PTR ], gluHandle);
+    e('dlclose', [ f.INT, f.PTR ], glutHandle);
+    e('dlclose', [ f.INT, f.PTR ], glHandle);
+
+    e('exit');
+  }
+};
+KeyboardFunc.prototype.ffiTypes = [ f.VOID, f.INT, f.INT, f.INT ];
+
+var SpecialFunc = function(key, x, y) {
+  if (key == 101) {
+    e(glutFullScreen);
+  } else if (key == 103) {
+    e(glutReshapeWindow, [ f.VOID, f.INT, f.INT ], 640, 480);
+  }
+};
+SpecialFunc.prototype.ffiTypes = [ f.VOID, f.INT, f.INT, f.INT ];
+
+e(glutInit, [ f.VOID, f.PTR, f.PTR ], [], 0);
+e(glShadeModel, [ f.VOID, f.INT ], 0x1D01);
+e(glClearColor, [ f.VOID, f.FLOAT, f.FLOAT, f.FLOAT, f.FLOAT ], 0.0, 0.0, 0.0, 0.5);
+e(glClearDepth, [ f.VOID, f.DOUBLE ], 1.0);
+e(glEnable, [ f.VOID, f.INT ], 0x0B71);
+e(glDepthFunc, [ f.VOID, f.INT ], 0x0203);
+e(glEnable, [ f.VOID, f.INT ],  0x0B57);
+e(glHint, [ f.VOID, f.INT, f.INT ], 0x0C50, 0x1102);
+
+e(glutInitDisplayMode, [ f.VOID, f.INT ], 0 | 2);
+e(glutInitWindowSize, [ f.VOID, f.INT, f.INT ], 640, 480);
+glutWindow = e(glutCreateWindow, [ f.INT, f.CSTR ], 's2 in 3D');
+e(glutDisplayFunc, [ f.VOID, f.PTR ], DisplayFunc);
+e(glutReshapeFunc, [ f.VOID, f.PTR ], ReshapeFunc);
+e(glutKeyboardFunc, [ f.VOID, f.PTR ], KeyboardFunc);
+e(glutSpecialFunc, [ f.VOID, f.PTR ], SpecialFunc);
+e(glutMainLoop);

@@ -1,0 +1,21 @@
+decl x
+set x {
+a squiggly string
+}
+
+//break {break outside of a loop is a bug}
+return {returning a value from a script}
+
+throw MISUSE {misuse!}
+proc x-y-z {args...} {function body}
+set $y(<<<XXX z XXX) #  (...) is a T10N_T_WHCLVarSubscript
+/*
+    just a random
+    interruption */ set $yyy \
+    (<<<XXX zzz XXX) # (...) is NOT a T10N_T_WHCLVarSubscript
+//set [];
+//set ();
+set [set y "abc"] 1
+true; false; undefined; null
+//true x;
+//set x y z

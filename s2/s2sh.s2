@@ -1,0 +1,196 @@
+/*
+  Initialization script for s2sh. If it is named the same as the binary
+  (minus any ".exe" extension), with a ".s2" extension (and in the same directory),
+  s2sh will autoload this file at startup and fail if processing it fails.
+
+  Alternately, seting the environment variable S2SH_INIT_SCRIPT to the
+  full path to this file will tell s2sh to use that file instead of
+  doing the automatic lookup described above.
+*/
+assert s2;
+
+assert typeinfo(isfunction import);
+affirm typeinfo(isfunction s2.loadModule);
+affirm typeinfo(isfunction s2.getenv);
+affirm s2.io;
+affirm typeinfo(isfunction s2.io.output);
+affirm s2.fs;
+
+const cliFlags = (s2.ARGV ? s2.ARGV.flags : 0) ||| {prototype:null};
+/**
+   If a string-type CLI flag OR environment variable (in that order)
+   with the given name is found, this function returns an array of its
+   contents, split using s2.PathFinder.tokenizePath(). If no
+   flag/environment variable is found, or a CLI flag with a non-string
+   value is found, undefined is returned.
+
+   Interpretation of the arguments is as follows:
+
+   - If only 1 argument is provided, this routine looks for both a
+   CLI flag and environment var (in that order) with that name.
+
+   - If 2 arguments are provided, the 1st is checked as a CLI flag
+   and the 2nd as an environment variable (in that order).
+*/
+const pathFromEnv = proc(f,e){
+    var p = F[f] ||| E(e);
+    return typeinfo(isstring p)
+        ? P.tokenizePath(p)
+    : undefined;
+} using {E:s2.getenv, F: cliFlags, P:s2.PathFinder};
+
+/**
+  An s2.loadModule() proxy which uses a PathFinder
+  instance to search for DLLs. The name argument must be the
+  base name part, optionally with a partial leading (sub-)path.
+
+  The symbol part, if set, represents the symbolic name of the entry
+  point into the DLL and is passed as the last argument to
+  s2.loadModule().
+
+  For a search path it uses the CLI flag --s2.module.path or the
+  environment var the S2_MODULE_PATH. They are treated as a semicolon-
+  or colon-separated list of directories.
+
+  For search extensions it uses --s2.module.ext or the env var
+  S2_MODULE_EXTENSIONS. They are treated as a semicolon- or
+  colon-separated list of file extensions (including the leading
+  period).
+
+  If the path and/or extensions are not specified defaults are used:
+  the path is limited to '.' and the extensions are '.so:.dll'.
+*/
+s2.loadModule2 = function(name,symbol){
+    affirm typeinfo(isstring name);
+    const n = P.search( name );
+    n || throw exception('CWAL_RC_NOT_FOUND',
+                          "Cannot find '"+name+"' in search path "
+                          +P.prefix.toJSONString());
+    const a = [R ? R(n) : n];
+    symbol && (a[] = symbol);
+    return L(@a);
+} using {
+    L: s2.loadModule,
+    R: s2.fs ? s2.fs.realpath : undefined,
+    P: new s2.PathFinder(
+        // Directories...
+        pathFromEnv('s2.module.path','S2_MODULE_PATH') ||| ['.'],
+        // Extensions...
+        pathFromEnv('s2.module.ext','S2_MODULE_EXTENSIONS') ||| ['.so','.dll']
+    )
+};
+
+/**
+   2020-02-06: Obsolete: the import keyword does this already, except
+   for the s2.fs.realpath part, and uses the same default search
+   path/extensions.
+
+   An s2.import() extension which uses a configurable
+   search path and extension set for scripts.
+*/
+s2.import2 = function(name){
+    affirm 'string' === typeinfo(name name);
+    const fn = p.search( name );
+    fn || throw exception('CWAL_RC_NOT_FOUND',
+                          "Cannot find '"+name+ "' in search path "
+                          +p.prefix.toJSONString());
+    return import(false, r ? r(fn) : fn);
+} using {
+    r: s2.fs ? s2.fs.realpath : undefined,
+    p: new s2.PathFinder(
+        // Directories...
+        pathFromEnv('s2.import.path','S2_IMPORT_PATH')
+            ||| ['.'],
+        // Extensions...
+        pathFromEnv('s2.import.ext','S2_IMPORT_EXTENSIONS')
+            ||| ['.s2']
+    )
+};
+
+/**
+   For the given container, v, this displays (via s2.io.output()) a
+   listing of its properties. Intended for getting an overview of an
+   object's API.
+*/
+s2.vls = proc(v,label){
+    label && print(label);
+    typeinfo(iscontainer v) &&
+        foreach(v=>k,vv) print('\t'+typeinfo(name k), k, '=', typeinfo(name vv), vv);
+};
+
+/**
+   For the given container, v, this displays (via s2.io.output() a
+   tree listing, recursively, of its properties. Intended for getting
+   an overview of an object's API.
+
+   If includeProto is truthy, v.prototype is also dumped. If it is
+   less than 0, that is done recursively for all entries and their
+   prototypes.
+*/
+s2.vtree = proc vtree(v,label,includeProto){
+    typeinfo(iscontainer v) || return;
+    if(!typeinfo(isstring label) && undefined===includeProto){
+        includeProto= label;
+        label = undefined;
+    }
+    const doMyProto = includeProto;
+    includeProto < 0 || (includeProto=0);
+    //print(__FLC,'argv =',argv);
+    label ?: (label = "%1$p".applyFormat(v));
+    label && out(buf.toString(),label," [type: ",typeinfo(name v),'] ==>\n');
+    ++buf.level;
+    buf.length(buf.level*4);
+    buf.fill(' ');
+    var ex = catch {
+        typeinfo(isarray v)
+            ? foreach(@v=>k,v) eval->eachIndex
+            : foreach(v=>k,v) eval->eachProp;
+        if(v.prototype){
+            doMyProto
+                ? vtree(v.prototype,label?label+'.prototype':0, includeProto)
+                : out(buf.toString(),label ? label+'.' : '',
+                      'prototype ==> [type: ',
+                      typeinfo(name v.prototype),']\n');
+        }
+    };
+    --buf.level;
+    buf.length(buf.level * 4);
+    ex && throw ex;
+} using {
+    buf: new s2.Buffer(20){this.level=0},
+    out: s2.io.output,
+    eachProp:eval=>{
+        if(typeinfo(isfunction v)){
+            out(buf.toString(), (label ? label+'.'+k :k),'()\n');
+        }
+        else if(typeinfo(iscontainer v)
+                && typeinfo(isfunction v.mayIterate)){
+            v.mayIterate()
+                ? vtree(v,(label ? label+'.'+k : k), includeProto)
+                : out(buf.toString(),(label ? label+'.'+k : k),
+                      " = <cyclic: %1$p>\n".applyFormat(v));
+        }else{
+            out(buf.toString(), (label ? label+'.'+k :k),
+                ' = ', typeinfo(name v), ' ', v, '\n');
+        }
+    },
+    eachIndex:eval=>{
+        if(typeinfo(isfunction v)){
+            out(buf.toString(), (label ? label+'['+k+']','()\n'));
+        }
+        else if(typeinfo(iscontainer v)
+                && typeinfo(isfunction v.mayIterate)){
+            v.mayIterate()
+                ? vtree(v,(label ? label+'['+k+']' : k), includeProto)
+                : out(buf.toString(),(label ? label+'['+k+']' : k),
+                      " = <cyclic: %1$p>\n".applyFormat(v));
+        }else{
+            out(buf.toString(), (label ? label+'['+k+']' :k),
+                ' = ', typeinfo(name v), ' ', v, '\n');
+        }
+    }
+};
+
+// s2.require = s2.import2(__FILEDIR+'require.d/require.s2');
+
+s2;// script result

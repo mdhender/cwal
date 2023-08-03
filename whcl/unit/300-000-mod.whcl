@@ -1,0 +1,13 @@
+decl apis [whcl install-api]
+assert [info is-string $apis]
+assert [apis index-of json] >= 0
+set apis [apis split ' ']
+decl i 0
+foreach a $apis {
+    decl m [whcl.install-api $a]
+    assert $m == whcl[$a]
+    incr i
+}
+assert $i > 0
+
+

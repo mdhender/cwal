@@ -1,0 +1,94 @@
+requireS2(['modeler','DataModel!TestModel'], proc(M,MyModel){
+    print(__FLC,"Running Modeler tests...");
+    print(__FLC,'search path/ext =',M.config.pf.prefix, M.config.pf.suffix);
+    affirm requireS2;
+    //const requireS2 = undefined;
+    assert MyModel inherits M.DataModel;
+    var m = MyModel.new(1,2,3);
+    //print(__FLC, 'm =',m);
+    assert m inherits MyModel;
+    assert m inherits M.DataModel;
+    //print(__FLC, 'MyModel.attr() =',MyModel.attr());
+    //print(__FLC, 'm.attr() =',m.attr());
+    //print(__FLC, 'm.$mstate =',m.$mstate);
+    assert !m.isModified();
+    assert m.isModified(true);
+    assert m === m.isModified(false);
+    assert !m.isModified();
+    //print(__FLC, 'm.$mstate =',m.$mstate);
+    //print(__FLC,m.attr().foo);
+    assert -1 === m.attr().foo;
+    assert -1 === m.attr('foo');
+    assert 1 === m.attributes.a;
+    assert 2 === m.attributes.b;
+    assert 3 === m.attributes.c;
+    assert !m.attributes.hasOwnProperty('x');
+    assert -1 === m.attributes.foo /* inherited via the prototype model! */;
+    m.attr('foo',0);
+    assert 0 === m.attributes.foo;
+    assert -1 === m.attributes.prototype.foo;
+    unset m.attributes.foo;
+    assert -1 === m.attributes.foo;
+    m.isModified(false);
+
+    var mj = m.toJSON();
+    print(__FLC, 'mj =',mj);
+    assert 'TestModel' === mj.type;
+    assert mj.attributes;
+    assert !mj.attributes.hasOwnProperty('foo') /* b/c derived attributes are not serialized */;
+    assert !mj.foo /* b/c derived attributes are not serialized */;
+    //assert mj.attributes.x === m.attr('x') /* b/c of our inheritance trick */;
+    assert m.attr('a')===mj.attributes.a;
+    assert m.attr('b')===mj.attributes.b;
+    assert m.attr('c')===mj.attributes.c;
+    unset mj;
+
+    // Change listeners and notifications...
+    const changes = {'*': 0, 'a': 0};
+    var allA = m.addListener(proc(k,v,m){
+        ++changes.'*';
+        print(__FLC,"From the [ * ] change listener.",k,v);
+    }.importSymbols(nameof changes));
+    //print(__FLC, 'allA =',allA);
+    m.addListener('a', proc(k,v,m){
+        ++changes.(k);
+        print(__FLC,"From the [",k,"] change listener.",k,v);
+    }.importSymbols(nameof changes));
+    assert 0 === changes.a;
+    assert 0 === changes.'*';
+    assert 1 === m.attr('a');
+    m.attr('a', 1);
+    assert !m.isModified() /* same value as before, i.e. no change */;
+    m.attr('a', 3);
+    assert 3 === m.attr('a');
+    assert m.isModified();
+    assert 1 === changes.a;
+    assert 1 === changes.'*';
+    m.attr('b', 7);
+    assert 7 === m.attr('b');
+    assert 1 === changes.a;
+    assert 2 === changes.'*';
+    //print(__FLC, m.toJSON());
+    //print(__FLC, 'callCounts:',changes);
+    affirm true === m.removeListener(allA);
+    affirm false === m.removeListener(allA);
+    m.attr('a', 0);
+    m.attr('a', 0); // w/ same value
+    assert 2 === changes.a;
+    assert 2 === changes.'*';
+    m.attr('a', 1);
+    assert 3 === changes.a;
+    assert 2 === changes.'*';
+    //print(__FLC, 'callCounts:',changes);
+    //print(__FLC, m.toJSON());
+    m.removeListener().attr('a', 13);
+    assert 3 === changes.a;
+    assert 2 === changes.'*';
+    //print(__FLC, 'callCounts:',changes);
+    //print(__FLC, m.toJSON());
+
+    m.attr('a', undefined);
+    assert !m.attributes.hasOwnProperty('a');
+    assert undefined === m.attr('a');
+    return true;
+});

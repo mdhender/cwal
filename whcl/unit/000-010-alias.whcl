@@ -1,0 +1,266 @@
+# Unit tests for the `alias ` builtin command.
+if {1} {
+    decl x 1
+    decl y [alias x]
+    assert 1 == $y
+    incr y
+    assert 2 == $x
+    assert 2 == $y
+}
+
+if {1} {
+    decl o object
+    assert ![o.has-own-property Z]
+    decl z [alias o.Z]
+    assert ![o.has-own-property Z]; # injecting a value is no longer necessary
+    assert undefined == $z
+    assert undefined == o.Z
+    set o.Z 1
+    assert 1 == $z
+    set z 2
+    assert 2 == o.Z
+    assert [info is-integer $z]
+    # We cannot ^^^^^^ get any metadata about the ref because all access
+    # to it is redirected to its target container at a level whcl cannot
+    # see.
+    decr z 3
+    assert -1 == $z
+    assert o.Z == $z
+
+    assert [info is-local z]
+    unset z
+    assert -1 == o.Z
+    assert ![info is-local z]
+    
+    set o.r [alias o.R]
+    set o.r 2
+    assert 2 == o.R
+    assert o.R == o.r
+
+    decl o2 object
+    o.copy-properties-to $o2
+    #echo __FLC o $o; echo __FLC o2 $o2
+    set o2.r 3
+    #echo __FLC o $o; echo __FLC o2 $o2
+    assert 2 == o2.R; # b/c o2.r refs o.R
+    assert 3 == o.r
+    assert o.r == o2.r
+    assert o.R == o.r
+
+    unset o.r
+    assert undefined == o.r
+    #echo __FLC o $o; echo __FLC o2 $o2
+    assert 3 == o.R
+    assert 2 == o2.R
+}
+
+if {1} {
+    # Closures via [alias...]
+    decl o object x 0
+    decl x 1
+    proc f {} {
+        set y 2
+        set z 1
+    } using {y [alias x] z [alias o.x]}
+    f
+    assert 1 == o.x
+    assert 2 == $x
+    
+}
+
+if {1} {
+    # Multiple aliases...
+    decl x 1
+    decl r1 [alias x]
+    decl r2 [alias r1]
+    assert 1 == $r2
+    set r2 2
+    assert 2 == $r2
+    assert 2 == $r1
+    assert 2 == $x
+
+    # Circular refs cause Grief!
+    set x [alias r2]
+    assert [[catch {set x 3}].code-string] == \
+        CWAL_RC_CYCLES_DETECTED
+}
+
+#pragma vacuum
+
+
+if {1} {
+########################################################################
+# We have a fundamental conflict of interests here with regards to
+# aliases...
+#
+# 1) We want aliases to be as transparent as possible.
+# 2) Until we don't.
+#
+# What follows is one of those cases where we really _don't_ want them
+# to be _entirely_ transparent. When aliasing a non-existing object/array
+# property/index, we "want" them to resolve that as `undefined`. If they
+# resolve it as NULL (C NULL, not whcl null), the surrounding APIs see
+# that as "not found" because NULL property values are not a thing in
+# cwal (setting a property to NULL is how you _unset_ it).
+#
+# Aliases throw a kink in the works because we cannot really know,
+# downstream, whether they're pointing to a var or an object property.
+# In order to get the object/array support we want, we have to resolve
+# unknown props are undefined. In order to get the scope support we
+# want, we have to resolve them as NULL.
+#
+# For the time being i'm going to accept that this is irreconcilable
+# and go with the object/arrays approach. If we don't, then aliasing
+# an unknown property will result in an alias which cannot itself be
+# deref'd because its target resolves to NULL, which means "no found"
+# everywhere in the framework.
+#
+# What follows is, IMO, the lesser of two evils. i'm not 100% thrilled
+# about these tests reflecting the current state of affairs.
+    
+    # Var Resurrection :/...
+    decl x 1
+    decl r [alias x]
+    unset x
+    assert ![info is-local x]
+    #assert [[catch {
+    set r 2
+    #}].code-string] == CWAL_RC_NOT_FOUND
+    # ^^^^ this would be the ideal/semi-ideal case, except that it
+    # causes a bit of confusion, as `r` is obviously defined but is
+    # being report as "cannot resolve `r`" because _what it points to_
+    # has been removed.
+    assert [info is-local x]
+    assert 2 == $x
+    
+    # Object properties/array indexes, OTOH, we _want_ to resurrect...
+    decl o object x 1
+    decl r2 alias o
+    unset o.x
+    assert undefined == o.x
+    set r2.x 2
+    assert 2 == o.x
+}
+
+#pragma vacuum
+
+if {1} {
+    # Aliases to array entries...
+    decl a array 1 2 3
+    assert [info is-local a]
+    decl x [alias a.1]
+    set x 0
+    assert a.1 == 0
+    incr x
+    assert 1 == a.1
+
+    # And aliases as array entries...
+    decl y -1
+    set a.0 [alias y] ;# which is an alias to y
+    assert -1 == a.0
+    incr a.0 2
+    assert 1 == a.0
+
+    decl o object x 0
+    set a.0 [alias o.x]
+    assert 0 == $y
+    set y 2
+    assert 2 == o.x
+    assert o.x == a.0
+    assert o.x == $y
+}
+
+#pragma vacuum
+
+if {1} {
+    # Aliases survive copying between arrays in
+    # some contexts...
+    decl x 1
+    decl y 2
+    decl z 3
+    decl a array [alias x] [alias y] [alias z]
+    decl t new whcl.Tuple $a
+    set t.0 4
+    assert 4 == $x
+
+    # And in objects...
+    decl o object x [alias x] y [alias y]
+    decl d object
+    o.copy-properties-to $d
+    assert 4 == d.x
+    incr x
+    assert 5 == d.x
+}
+
+if {1} {
+    # Range checking of array index aliases...
+    assert [[catch {
+        decl a array
+        decl r [alias a[-1]]
+    }].message.index-of realistic] > 0
+    assert [[catch {
+        decl a array
+        decl r [alias a[0xffff]]
+    }].code-string] == CWAL_RC_RANGE
+}
+
+if {1} {
+    # Property interceptor functions...
+    decl x 1
+    proc f {} {
+        if {[argv.length]}{; # setter
+            set using.x argv.0
+        } else {; # getter
+            return using.x
+        }
+    } using {x [alias x]}
+    decl i [alias x $f]
+    assert 1 == $i
+    assert 1 == [f]
+    set i 2
+    assert 2 == $x
+    f 3
+    assert 3 == $x
+    assert 3 == $i
+
+    proc f2 {} {
+        # "this" will be the scope property storage
+        if {[argv.length]}{; # setter
+            set this.y argv.0
+        } else {; # getter
+            return this.y
+        }
+    }
+    decl r [alias x $f2]
+    assert undefined == [f2]
+    assert ![info is-local y]
+    assert 1 == [set r 1]
+    assert [info is-local y]
+    assert 1 == $y
+
+    set y 2
+    decl a array 4 1 3 [alias x $f2]
+    a.sort
+    assert 2 == a.1
+    assert $y == a.1
+    set a.1 7
+    assert 7 == $y
+
+    decl g alias -ro y
+    assert 7 == $g
+    assert [[catch {
+        set g 1
+    }].code-string] == CWAL_RC_ACCESS
+}
+
+if {1} {
+    # Weakly aliasing an unset property...
+    decl o object; decl a [alias -weak -ro o.x];
+    assert undefined == $a
+    set o.x 3
+    assert 3 == $a
+    unset o.x
+    assert undefined == $a
+    unset o
+    assert [[catch {eval $a}].code-string] == CWAL_RC_NOT_FOUND
+}

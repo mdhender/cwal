@@ -1,0 +1,164 @@
+const SQ3 = s2.import('bootstrap.s2');
+print(__FLC,"SQ3 =",SQ3);
+scope {
+    affirm 'Stmt' === typeinfo(name SQ3.Stmt);
+    const db = new SQ3("foo.db", "wc");
+    print(__FLC,"db =",db);
+    affirm 0 === db.changes();
+    affirm db === db.busyTimeout(3000);
+    affirm 0 === db.totalChanges();
+    db.execMulti(<<<_SQL
+                 drop table if exists t;
+                 create table t(a,b,c);
+                 insert into t(a,b,c) values(1,2,3),(4,5,6);
+                 _SQL);
+    affirm 2 === db.changes();
+    affirm 2 === db.totalChanges();
+    scope {
+        var st = db.prepare("insert into t(a,b,c) values(?,?,?)");
+        affirm 3 === st.parameterCount;
+        affirm 0 === st.columnCount;
+        affirm undefined === st.columnNames;
+        st.exec([3,6,9])
+            .exec(6,9,12)
+            .exec()/* will re-use the previous bound param values */
+            .clearBindings()
+            .exec()/* will use NULL bound param values */
+        ;
+        st.finalize();
+        affirm 1 === db.changes();
+    };
+    affirm 6 === db.totalChanges();
+    const tCount = db.selectValue("select count(*) from t");
+    affirm 6 === tCount;
+    var i = 0;
+    db.each({
+        sql: 'select * from t',
+        //mode: 't', // t|a|o (tuple, array, object)
+        each: proc(){
+            print(++i,this);
+            affirm typeinfo(istuple this);
+        }
+    });
+    
+    affirm tCount === i;
+
+    /*
+      TAKE CARE to finalize() prepared statements BEFORE THEIR DB IS
+      CLOSED!
+    */
+    var stmt, ex = catch{
+        i = 0;
+        stmt = db.prepare("select * from t");
+        while(var r = stmt.stepTuple()){
+            ++i;
+            print(__FLC,r);
+            affirm typeinfo(istuple r);
+        }
+    };
+    stmt && stmt.finalize();
+    ex ? throw ex : unset ex;
+    affirm tCount === i;
+
+    /* For simpler exception handling, use transaction(): */
+    var err = catch db.transaction(proc(){
+        /* this === db */
+        this.prepare("insert into t(a,b,c) values(?,?,?)")
+            .exec([8,7,6])
+            .exec(7,6,5)
+            .finalize();
+        affirm tCount+2 === this.selectValue("select count(*) from t");
+        throw "Aborting transaction.";
+    });
+    affirm typeinfo(isexception err);
+    unset err;
+    affirm tCount === db.selectValue("select count(*) from t");
+
+    db.each({
+        sql: 'select * from t limit 1',
+        //mode: 't', // t|a|o (tuple, array, object)
+        each: proc(){
+            print(__FLC,rowNumber,this);
+            affirm typeinfo(istuple this);
+        }
+    });
+
+    db.each({
+        sql: 'select * from t limit 1',
+        mode: 'a',
+        each: proc(){
+            print(__FLC,rowNumber,this);
+            affirm typeinfo(isarray this);
+        }
+    });
+
+    db.each({
+        sql: 'select * from t limit 1',
+        mode: 'o',
+        each: proc(){
+            print(__FLC,rowNumber,this);
+            affirm typeinfo(isobject this);
+        }
+    });
+
+    scope {
+        // Test db.each({each:[],...}) ...
+        var cap = [];
+        db.each({
+            sql: 'select * from t limit 2',
+            mode: 'o',
+            each: cap
+        });
+        affirm 2 === cap.#;
+        affirm typeinfo(isobject cap.1);
+        db.each({
+            sql: 'select * from t limit 2',
+            mode: 't',
+            each: cap
+        });
+        affirm 4 === cap.#; 
+        affirm typeinfo(istuple cap.3);
+    }
+    
+    var row = db.selectRow("select a a, b b, c c from t");
+    affirm typeinfo(isobject row);
+    affirm undefined === row.prototype;
+    row = db.selectRow("select a a, b b, c c from t where b=?", [6]);
+    affirm typeinfo(isobject row);
+    affirm 6 === row.b;
+    row = db.selectRow("select a a, b b, c c from t where b=?", [6], true);
+    affirm typeinfo(istuple row);
+    affirm 6 === row.1;
+    unset row;
+
+    var rows = db.selectRows("select a, b from t",undefined,false);
+    affirm typeinfo(isarray rows);
+    affirm typeinfo(isobject rows[0]);
+    rows = db.selectRows("select a, b from t",undefined,true);
+    affirm typeinfo(isarray rows);
+    affirm typeinfo(istuple rows[0]);
+    unset rows;
+    
+    db.'operator<<' = proc(sql){ return this.prepare(sql) };
+    unset stmt;
+    scope {
+        var stmt = db << 'select * from t limit 1';
+        affirm 'Stmt' === typeinfo(name stmt);
+        affirm typeinfo(isarray stmt.columnNames);
+        affirm 3 === stmt.columnNames.#;
+        affirm 3 === stmt.columnCount;
+        affirm 0 === stmt.parameterCount;
+        affirm true === stmt.step();
+        affirm undefined === stmt.step();
+        stmt.reset();
+        affirm stmt === stmt.exec();
+        affirm stmt === stmt.exec();
+        affirm stmt === stmt.exec();
+        stmt.finalize();
+    }
+    print(__FLC,"db should destruct in a second.");
+    db.close();
+    affirm 'CWAL_RC_TYPE' === catch{db.close()}.codeString() /* native db handle was disconnected by close() */;
+    ;;
+}
+print(__FLC,"Done.");

@@ -1,0 +1,113 @@
+/* iterate() module tests... */
+const iterate = s2.iterate ||| s2.loadModule('iterate.so');
+
+var count = 0;
+
+var v = [1,2,3];
+iterate(v, proc(){++count, print('array',argv)});
+assert 3 === count;
+count = 0;
+
+v = [#3,2,1];
+iterate(v, proc(){++count, print('tuple',argv)});
+assert 3 === count;
+count = 0;
+
+v = {a:1, b:2};
+iterate(v, proc(){++count, print('object',argv)});
+assert 2 === count;
+count = 0;
+
+v = {#a:1, b:2};
+iterate(v, proc(){++count, print('hash',argv)});
+assert 2 === count;
+count = 0;
+
+v = enum{x:1,y};
+iterate(v, proc(){++count; print('enum',argv.0,argv.1,argv)});
+//foreach(v=>k,v) print('enum again',k,v);
+assert 2 === count;
+count = 0;
+
+const o = {
+    state:{
+        list: ['one','two',[3,'three']],
+        index: undefined,
+        nextCount: 0 // how many times iterNext() has been called.
+    },
+    iterBegin:proc(){
+        this.state.index = 0;
+    },
+    iterNext:proc(){
+        const s = this.state;
+        affirm typeinfo(isinteger s.index);
+        ++s.nextCount;
+        return s.index<s.list.#
+            ? s.list[s.index++]
+            : this.iterEnd;
+    },
+    iterEnd: iterate.iterEnd,
+    // iterFinalize is optional.
+    iterFinalize:proc(){this.state.index = undefined}
+};
+
+assert iterate.isaIterable(o);
+if(0){
+    o.iterBegin();
+    print(__FLC, o.iterNext());
+    print(__FLC, o.iterNext());
+    print(__FLC, o.iterNext());
+    assert o.iterEnd === o.iterNext();
+    print(__FLC, o.iterNext());
+}
+iterate(o, proc(){print('custom',argv.0)});
+
+assert 4 === o.state.nextCount;
+assert undefined === o.state.index;
+o.state.list[3] = [#'four',4.0];
+iterate(o, proc(){print('custom again',argv.0)});
+assert 9 === o.state.nextCount;
+
+const a = [];
+iterate(o, a);
+assert 14 === o.state.nextCount;
+foreach(@o.state.list=>k,v) assert a[k]===v;
+print(__FLC,'collected:',a);
+
+/* A basic numeric range iterator class. */
+const RangeIterator = {
+    prototype: undefined,
+    __new: proc(start,end){
+        this.start = start;
+        this.end = end;
+        this.incr = end>=start;
+    },
+    iterBegin: proc(){ this.pos = this.start},
+    iterEnd: enum{e}.e,
+    iterNext: proc(){
+        return this.incr
+            ? (this.pos>this.end ? this.iterEnd : this.pos++)
+            : (this.pos<this.end ? this.iterEnd : this.pos--)
+    }
+};
+
+var r = new RangeIterator(5,10);
+assert 5 === r.start;
+assert 10 === r.end;
+assert undefined === r.pos;
+assert r.incr;
+count = 0;
+print('range iterator',r);
+iterate(r, proc(i) {1===++count && assert 5===i; assert i<=10});
+assert 6 === count;
+
+r = new RangeIterator(10,5);
+assert 10 === r.start;
+assert 5 === r.end;
+assert undefined === r.pos;
+assert !r.incr;
+print('range iterator 2:',r);
+count = 0;
+iterate(r, proc(i) {1===++count && assert 10===i; assert i>=5});
+assert 6 === count;
+unset r;

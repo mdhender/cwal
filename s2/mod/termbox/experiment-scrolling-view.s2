@@ -1,0 +1,57 @@
+const tb = s2.import('tb-bootstrap.s2');
+
+var ex = catch {
+    tb.requireS2(['termbox/BasicScroller', 'termbox/Marquee', 'termbox/initScreen'], proc(Scroller, Marquee){
+
+        var w = new tb.Window();
+        w.defaultAttr(tb.color.white | tb.attr.bold, tb.color.blue)
+            .clear()
+            .print3(1,w.height()-1,'view: ',w.width(),"x",w.height(),' incl. border')
+            ;
+
+        var p = new tb.Pad(w.width()*1.5,w.height()*1.5).withThis(proc(){
+            var w = this.width(), h = this.height();
+            this.print3(2,2,'pad: ',w,"x",h)
+                .hLine(0, h/2, w-1)
+                .vLine(w/2, 0, h-1)
+                .print3(w/2-3, h/2, "Ctrl-X");
+            for(var i = 0; i < h; ++i){
+                this.print3(0, i, i);
+                this.print3(i>9 ? w-2 : w-1, i, i);
+            }
+            for(var total=0; total < w; ){
+                for( var cc = 0; cc < 10; ++cc, ++total ){
+                    this.print3(total, 0, cc);
+                    this.print3(total, h-1, cc);
+                }
+            }
+        });
+
+        const scr = new Scroller(p,w);
+        unset w, p;
+        scr//.scrollTo(4,1)
+            .center()
+            //.eventLoop()
+        ;
+        assert typeinfo(ishash scr.keyMap.mod);
+        var mWidth = scr.view.width()/2;
+        var mview = new tb.Window(scr.view, mWidth-1, 1, mWidth, 0).
+            defaultAttr(tb.color.black, tb.color.yellow | tb.attr.bold);
+        const marquee = new Marquee(mview)
+            .setMessage("Scroll around. Ctrl-X quits. Happy Hacking!");
+        unset mview, mWidth;
+        while(true){
+            tb.present(); // forces updates of subwindow-only views (the marquee)
+            const ev = tb.peek(/*wait time in ms*/);
+            marquee.tick();
+            ev || continue;
+            //scr.view.reverseAttr();
+            //marquee.setMessage(ev.toJSONString());
+            false===scr.processEvent(ev) && break;
+        };
+        //tb.poll();
+    });
+};
+tb.shutdown();
+ex && (throw ex) || unset ex;
+print("Done!");

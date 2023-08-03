@@ -1,0 +1,27 @@
+
+scope {
+    var src = s2.Buffer.readFile('tmpl-demo.tmpl');
+    var tmpl = s2.tmpl(src);
+    //print(tmpl);
+    eval -> tmpl;
+}
+return;
+
+scope {
+    const out = s2.io.output;
+    const tmpl = s2.tmpl;
+    var src = <<<:EOF
+<% 'hi' %>!<?
+var x = 1;
+?>
+<% x++ %>, <% x++ %>, <% x++ %>!
+
+EOF;
+
+    var t = tmpl(src);
+    assert 'buffer' === typename t;
+    //print('source:', src);
+    //print('compiled:', t);
+    scope -> t;
+    //out('\n');
+}

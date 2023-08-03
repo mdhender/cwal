@@ -1,0 +1,35 @@
+# pragma trace-assert 1
+decl x 1
+decl n 0
+decl b false
+if {$x} { assert true; incr n; } else { assert false }
+if {!$x} { assert false } else { assert true; incr n }
+if {0} {assert false} else if {0} {assert false} else {incr n}
+assert 3 == $n
+
+# An if/else block evaluates to true if any 'if' component
+# is true, else false.
+assert true == [if {$x} { assert true; incr n; } else { assert false }]
+assert false == [
+if {!$x} {
+    assert false
+} else {
+    assert true; incr n;
+}
+]
+assert false == [if {0} {assert false} else if {0} {assert false} else {incr n}]
+assert true == [if {0} {assert false} else if {1} {assert true; incr n; }]
+assert 7 == $n
+
+set n 0
+if (true) {
+    incr n
+}
+assert 1 == $n
+set b false
+if [incr n] {
+    set b true
+}
+assert 2 == $n
+assert $b
+

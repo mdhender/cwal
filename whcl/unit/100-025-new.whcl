@@ -1,0 +1,263 @@
+########################################################################
+# A test and demonstration of the `new` command.
+#
+# Much commentary about what's going on here can be found in
+# whcl/manual/builtin-new.md.
+
+########################################################################
+# Our class...
+proc Car {name {color red}} {
+    affirm [info is-newing] /*else it was called without `new`*/
+    set this[color] $color
+    set this[name] $name
+}
+assert ![info is-newing]; # just testing is-newing
+assert [catch {Car 1 2}]; # must fail b/c of is-newing check
+
+########################################################################
+# The class prototype (where our member functions and such go).  There
+# are two distinct syntaxes with which we can do this (the second of
+# which was conceived while pondering on ways to simplify the first).
+if {false} {
+    # This syntax is fine for very simple cases but quickly becomes
+    # "less readable" because of the required [...] wrappers around
+    # procs:
+    set $Car[__prototype] object {
+        __prototype undefined
+        # ^^^ We clear the parent prototype primarily for
+        # demonstration purposes. Most classes won't want or need to,
+        # but it is sometimes useful or interesting.
+        __typename Car
+        say-name [proc {} {
+            #echo "My name is" this[name]
+            # ^^^ commented out only to avoid interfering with automated
+            # test output!
+        }]
+
+        say-color [proc {} {
+            #echo "My color is" this[color]
+            # ^^^ commented out only to avoid interfering with automated
+            # test output!
+        }]
+    }
+    # Other ways to clear the prototype:
+    #   unset $Car[__prototype][__prototype]
+    # or:
+    #   set $Car[__prototype][__prototype] undefined
+    # As a special case, setting the prototype to null or undefined
+    # clears it at the C level.
+} else {
+    # This syntax is thought to be be much better for non-trivial
+    # cases:
+    set Car[__prototype] object -this {
+        # With the -this flag, this object is eval'd as an ordinary
+        # script block and the scope's properties container (the one
+        # holding its variables) becomes both `this` and the resulting
+        # object.
+        assert this[__prototype] == [object][__prototype]
+        unset this[__prototype]
+        set -const this.__typename Car
+        proc say-name {} {
+            #echo "My name is" this[name]
+            # ^^^ commented out only to avoid interfering with automated
+            # test output!
+        }
+        proc say-color {} {
+            #echo "My color is" this[color]
+            # ^^^ commented out only to avoid interfering with automated
+            # test output!
+        }
+    }
+    assert undefined == Car[__prototype][__prototype]
+}
+
+########################################################################
+# Now make use of our brand new car...
+decl c new -post Car "WHCL 2000" {
+    set this[license-plate] BLUBLAYZ
+}
+
+# Test our property value expectations...
+assert 'Car' == [info type-name $c]
+assert c[__prototype] == Car[__prototype]
+assert "WHCL 2000" == c[name]
+assert red == c[color]
+assert BLUBLAYZ == c[license-plate]
+assert [info is-function c[say-color]]
+assert [info is-function c[say-name]]
+
+# Now call a class method...
+c[say-color]
+# ^^^^ that syntax is currently required because we cleared out the
+# proto-prototype, thereby losing its __command method!
+
+assert [catch {c say-name}]
+# ^^^ See, the more natural sytax won't work! Let's fix that in the
+# simplest way we know how to...
+
+decl x object ; # the core object type inherits what we need...
+set Car[__prototype][__command] x[__command]
+unset x
+
+# And now the other, more natural, method call syntax works because we
+# replaced the __command member with a useful implementation:
+c say-name
+
+unset c
+unset Car
+
+########################################################################
+# Part two: returning a different type from a constructor.
+
+proc MyRay {} {
+    decl -const self array
+    set $self[__prototype] this[__prototype]
+    # ^^^ without this, this type isn't "really" a MyRay.  _With_
+    # that, however, self no longer inherits the methods which make up
+    # the array type's core APIs.
+    foreach v $argv {self push $v}
+    return $self
+}
+
+set $MyRay[__prototype] object -this {
+    set -const this.__typename "My 'Ray Class"
+    proc my-length {} {
+        return [this length]
+        # this[length] is inherited via the array prototype
+    }
+    # Re-set the prototype's prototype to that of the Array class:
+    set this[__prototype] [array][__prototype]
+}
+
+if {true} {
+    decl m [new $MyRay 1 2 3 4]
+    assert "My 'Ray Class" == [info type-name $m]
+    assert 2 == m[1]
+    #echo m $m; # outputs like an array (because it is!)
+    assert [info is-array $m]
+    decl n 0
+    foreach i v $m {
+        # ^^^ foreach sees that $m is a native array and behaves
+        # appropriately.
+        # echo $i $v
+        incr n
+    }
+    assert 4 == $n
+    assert 4 == [m my-length]
+    decl o object mr $MyRay
+    set m new o[mr] 3 2 1
+    assert 3 == [m my-length]
+}
+unset MyRay
+
+########################################################################
+# An alternative formulation for the MyRay prototype acrobatics...
+decl MyRay2 eval -scope {
+    proc ctor {who {what crowbar}} {
+        decl -const self array
+        set self[__prototype] this[__prototype]
+        foreach v $argv {self push $v}
+        return $self
+    }
+    set ctor[__prototype] object -scope {
+        decl -const __typename MyRay2
+        proc my-length {} {
+            return [this length]
+            # this[length] is inherited via the array prototype
+        }
+    }
+    # Now re-assign the prototype's prototype to be that of an Array:
+    set ctor[__prototype][__prototype] [array][__prototype]
+    eval $ctor; # becomes the outer eval -scope result
+}
+
+if {true} {
+    decl m [new MyRay2 1 2 3 4]
+    assert MyRay2 == [info type-name $m]
+    assert 2 == m[1]
+    #echo m $m; # outputs like an array (because it is!)
+    assert [info is-array $m]
+    decl n 0
+    foreach i v $m {
+        # ^^^ foreach sees that $m is a native array and behaves
+        # appropriately.
+        # echo $i $v
+        incr n
+    }
+    assert 4 == $n
+    assert 4 == [m my-length]
+    decl o object mr $MyRay2
+    set m new o[mr] 3 2 1
+    assert 3 == [m my-length]
+    unset m n o
+}
+unset MyRay2
+
+########################################################################
+# The following alternative class structure is derived from s2. In
+# this one, the _prototype_ gets passed to `new` and the constructor
+# is a method in that prototype named `__new`. The syntax for the
+# caller of `new` is the same either way. The difference is in how
+# the class itself is formulated.
+decl MuchKlass object -scope {
+    proc __new {who {what crowbar}} {
+        set this[who] $who
+        set this[what] $what
+    }
+    proc get-what {} { return this[what] }
+    proc get-who {} { return this[who] }
+    decl -const __typename MuchKlass
+}
+assert MuchKlass[__prototype]
+decl mk new MuchKlass you
+#echo 'mk proto' MuchKlass[__prototype];
+#foreach k v MuchKlass[__prototype] {echo $k $v}
+assert MuchKlass == [info type-name $mk]
+assert mk[who] == you
+assert mk[what] == crowbar
+assert [mk get-what] == crowbar
+assert [mk get-who] == you
+unset MuchKlass
+
+########################################################################
+# 2022-04-01: added -post flag (no joke)
+if {true} {
+    proc F {x} {
+        set this.x $x
+        set this.y argv.1
+        set this.n [argv.length]
+    }
+    decl f new F
+    assert undefined == f.x
+    assert 0 == f.n
+
+    set f new F 0
+    assert 0 == f.x
+    assert undefined == f.y
+    assert 1 == f.n
+
+    set f new F 1 {}
+    assert 1 == f.x
+    assert '' == f.y
+    assert 2 == f.n
+
+    set f new -post F 2 {}
+    assert 2 == f.x
+    assert 1 == f.n
+    assert undefined == f.y
+
+    set f new F 3 {}
+    assert 3 == f.x
+    assert '' == f.y
+    assert 2 == f.n
+
+    set f new -post F 4 {set this.x 5}
+    assert 5 == f.x
+    assert undefined == f.y
+    assert 1 == f.n
+    
+    set f new F 6 {set this.x 7}
+    assert 6 == f.x
+    assert 2 == f.n
+    assert 'set this.x 7' == f.y
+}

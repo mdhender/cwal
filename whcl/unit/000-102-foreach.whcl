@@ -1,0 +1,84 @@
+# pragma trace-assert 2
+
+decl a array 'A' 'B' 'C'
+decl x 0
+foreach i v $a {
+    #echo $i = $v
+    assert [info is-string $v]
+    assert [info is-integer $i]
+    assert $a[$i] == $v
+    incr x
+}
+assert 3 == $x
+set x 0
+# Arrays can have properties but default to
+# iterating in list mode. The -props flag
+# tells it to iterate over the properties
+# instead...
+set $a[prop1] "a property"
+set $a[prop2] $a[prop1]
+foreach -props k v $a {
+    #echo $k = $v
+    assert [info is-string $v]
+    assert [info is-string $k]
+    incr x
+}
+assert 2 == $x
+set x 0
+
+foreach -props key $a {
+    assert 'a property' == $a[$key]
+}
+
+unset a
+
+decl o object a 1 b 2
+set x 0
+foreach k v $o {
+    #echo $k = $v
+    assert [info is-integer $v]
+    assert [info is-string $k]
+    assert $o[$k] == $v
+    incr x
+}
+assert 2 == $x
+set x 0
+unset o
+
+decl o object a 1 b 2
+set x 0
+foreach k $o {
+    #echo $k = $v
+    # assert [info is-integer $v]
+    assert [info is-string $k]
+    assert [info is-integer $o[$k]]
+    incr x
+}
+assert 2 == $x
+unset o
+
+
+set x 0
+foreach c "hällö" {
+    assert [info is-string $c]
+    incr x
+}
+assert 5 == $x
+
+set x 0
+decl str "hällö"
+foreach i c $str {
+    assert [info is-integer $i]
+    assert [info is-string $c]
+    assert $str[$i] == $c
+    incr x
+}
+assert 5 == $x
+
+foreach c $str {
+    continue
+    incr x
+}
+assert 5 == $x
+
+assert 'h' == [foreach c "hi" {break $c}]

@@ -1,0 +1,29 @@
+/**
+    Test code for ob (output buffering) plugin.
+*/
+unset s2.ob; // force loading of the DLL instead of a built-in copy.
+const ob = s2.ob ||| s2.loadModule('ob.so');
+assert ob;
+foreach(@['push','pop','clear','flush','getString','takeString',
+          'level','takeBuffer']=>k){
+    assert typeinfo(isfunction ob[k]);
+}
+assert 0 === ob.level();
+assert ob === ob.push();
+assert 1 === ob.level();
+ob.flush(); // purge assertion tracking output
+print("hi, world");
+var str = ob.pop(-1);
+assert typeinfo(isstring str);
+assert "hi, world\n" === str;
+assert 0 === ob.level();
+
+assert ob === ob.push();
+assert 1 === ob.level();
+ob.flush(); // purge assertion tracking output
+print("hi, world");
+str = ob.pop(1);
+assert typeinfo(isbuffer str);
+assert "hi, world\n" === str.takeString();
+assert 0 === ob.level();
+print("Done!");

@@ -1,0 +1,48 @@
+########################################################################
+# OB (Output Buffering) API tests...
+if {[expr whcl.ARGV.flags[no-test-ob]]} {return}
+whcl install-api ob
+decl -const ob whcl[ob]
+ob push
+# The following indention is only to improve readability,
+# such that the OB level matches the indention level...
+decl -const talv [pragma trace-assert]
+pragma trace-assert 0; # so output doesn't interfere with our tests
+assert 1 == [ob level];
+# Interferes with automated test output:
+#    echo "This will be flushed to stdout."
+#    ob flush
+    echo "level 1"
+        decl -const v1 [ob take-string]
+        ob push
+        assert 2 == [ob level]
+        echo "This will be flushed to level 1."
+        ob flush
+        echo "level 2"
+        decl -const v2 [ob take-string]
+    ob pop
+    assert 1 == [ob level]
+    decl -const v1b [ob take-string]
+    echo "discarded"
+    #ob clear; # not needed b/c pop() will do this
+assert 1 == [ob level]
+ob pop
+pragma trace-assert $talv
+assert $v1 == 'level 1\n';
+assert $v2 == 'level 2\n';
+assert $v1b == 'This will be flushed to level 1.\n';
+assert 0 == [ob level]
+
+decl o [ob capture [proc {} {
+    assert 1 == [whcl.ob level]
+    echo A
+    echo B
+    echo C
+}]]
+assert 0 == [ob level]
+assert "A\nB\nC\n" == $o
+#assert [info is-declared output-foo]
+# ^^^ it is highly unfortunate that we need the -anon flag to avoid a
+# local-scope proc here, but we don't currently have a way around that
+# which allows builtins such as [info] to work.
+

@@ -1,0 +1,85 @@
+const tb = s2.loadModule2('termbox');
+var ex = catch {
+    var w = new tb.Window(20,10);
+    //w.onPresent = proc(){ this.print3(0,2,argv) };
+    w.defaultAttr(tb.color.white | tb.attr.bold, tb.color.blue)
+        .clear()
+        .print3(0,0, "Hi! Tap a key. Ctrl-X quits")
+        .present();
+
+    const Editor = {
+        tb: tb,
+        __new: proc(win, x = 0, y = 0, w = 0, h = 1){
+            affirm win inherits this.tb.Window;
+            affirm typeinfo(isinteger x) && x >= 0;
+            affirm typeinfo(isinteger y) && y >= 0;
+            affirm typeinfo(isinteger h) && h >= 0;
+            affirm typeinfo(isinteger w);
+            if(w <= 0) w = win.width() - x;
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+            this.win = win;
+            this.xoff = this.yoff = 0;
+        },
+
+        bump: proc(offset=1){
+            (offset > this.w) && (offset = offset % this.w);
+            if((this.xoff += offset) >= this.w){
+                this.xoff = 0;
+                if(this.h>1){ // FIXME: bump more if offset >= this.w*2
+                    if(++this.yoff >= this.h){
+                        this.yoff = 0;
+                    }
+                }
+            }
+            this.win.cursor(this.x+this.xoff, this.y+this.yoff)
+                .present();
+            return this;
+        },
+
+        append: proc(char){
+            affirm typeinfo(isstring char);
+            this.win.print3(this.x+this.xoff, this.y+this.yoff, this.isSecret ? '*' : char);
+            return this.bump();
+        },
+
+        editLoop: proc(){
+            this.xoff = this.yoff = 0;
+            this.bump(0) /* init the cursor */.win.present();
+            const keys = tb.keys;
+            for(var e, f; e = this.tb.poll(); f = undefined){
+                f = this.keyMap[e.key ? keys # (e.key) : 'char'];
+                f && false===f(this,e) && break;
+            }
+        }
+    }.withThis(proc(){
+        const km = this.keyMap = {
+            'UP': proc(self,e){
+            },
+            'ARROW_LEFT': proc(self,e){
+            },
+            'ARROW_RIGHT': proc(self,e){
+            },
+            '^X': proc(self,e){
+                return false;
+            },
+            char: proc(self,e){
+                const ch = e.ch ||| e.key;
+                affirm typeinfo(isinteger ch);
+                self.append(ch.toChar()).win.present();
+            }
+        };
+        km.SPACE = km.char;
+    });
+
+    var e = new Editor(w,0,w.height()-1);
+    //e.isSecret = true;
+    e.editLoop();
+
+    //tb.poll();
+};
+tb.shutdown();
+ex && (throw ex) || unset ex;
+print("Done!");

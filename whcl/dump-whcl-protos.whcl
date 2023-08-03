@@ -1,0 +1,57 @@
+#!./whclsh
+########################################################################
+# A whcl demo/test script which outputs, recursively, the structure of
+# the members of the whcl global object.
+echo "Members of the whcl object:"
+
+# flag --install-api: install all available APIs.
+if {whcl.ARGV.flags.install-api} {
+    decl -const l [[whcl.install-api].split ' ']
+    echo "Including install-api entries:" $l
+    foreach v $l {whcl.install-api $v}
+}
+whcl.install-api Script
+# Not all objects inherits the property-keys method, so we'll
+# grab a copy of it to apply ourselves...
+decl -const pk [object].property-keys
+
+proc dump-proto {name obj {level 0}} {
+    eval -> $indent
+    echo -s [info type-name $obj] " " $name ":"
+    decl props
+    catch {
+        set props [pk[call] $obj]
+    }
+    incr level
+    if {$props} {
+        foreach p [props sort] {
+            decl v obj[$p]
+            if {[info is-object $v]} {
+                dump-proto $p $v $level
+                continue
+            }
+            eval -> $indent
+            echo -n [info type-name $v] $p
+            if {![info is-function $v]} {
+                echo -n " =" $v
+            }
+            echo
+        }
+    }
+    if {obj[__prototype]} {
+        dump-proto "__prototype" obj[__prototype] $level
+    }
+} using -scope {
+    decl -const pk $pk; # lookup efficiency hack, not stricty needed
+    decl -const space "    "; # per-level indention
+    decl -const indent new whcl.Script {
+        for {decl i 0} {$i < $level} {incr i} {
+            echo -n -s $space
+        }
+    }
+}
+
+foreach key [[pk[call] whcl].sort] {
+    dump-proto $key whcl[$key]
+}
+#dump-proto whcl whcl

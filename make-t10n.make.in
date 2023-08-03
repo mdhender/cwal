@@ -1,0 +1,30 @@
+#!/hey/emacs/this/is/make
+#
+# This is the main makefile for t10n/. It is intended to be included
+# from/via the main GNUmakefile.
+t10n:
+ifneq (1,$(MAKING_CLEAN))
+all: t10n
+endif
+$(call ShakeNMake.CALL.CLEAN-SET,t10n)
+clean-root: clean-t10n
+distclean-root: distclean-t10n
+
+########################################################################
+# Test binaries...
+t10n_src := $(addprefix $(DIR.t10n)/, \
+  c9n.c t10n.c \
+)
+t10n_obj := $(subst .c,.o,$(t10n_src))
+$(DIR.t10n)/test.BIN.OBJECTS := $(DIR.t10n)/test.o $(t10n_obj) $(libcwal.thelib)
+$(DIR.t10n)/test.BIN.LDFLAGS := -L$(DIR.top) -lcwal
+$($(DIR.t10n)/test.BIN.OBJECTS): CPPFLAGS+=$(PROJECT_INCLUDES)
+$(call ShakeNMake.CALL.RULES.BINS,$(DIR.t10n)/test)
+
+$(eval $(call ADD_C_DEPS,t10n,$(wildcard $(DIR.t10n)/*.c)))
+
+ifneq (1,$(MAKING_CLEAN))
+t10n: $($(DIR.t10n)/test.BIN)
+endif
+CLEAN.t10n += $($(DIR.t10n)/test.BIN) $(wildcard $(DIR.t10n)/*.o)
+

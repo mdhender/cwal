@@ -1,0 +1,526 @@
+#!/hey/emacs/use/tclsh
+#
+# autosetup config file for the cwal source tree.
+#
+# It may be interesting to note that 99% of this is for the s2 subdir,
+# not the core library. The only features from this process which
+# we use in the core library are the collection of CFLAGS, CPPFLAGS,
+# and similar. None of the system-dependent optional features are
+# used by the core library.
+#
+# Build process TODOs:
+#
+# - Patch our hand-rolled DLL and binaries build support to pull
+# certain flags provided by autosetup, e.g. replace our hard-coded
+# -rdynamic with the SH_LINKFLAGS define.
+#
+# - Perhaps add some proper install rules. So far they've never
+# been needed.
+########################################################################
+
+set DUMP_DEFINES_FILE defines.list
+file delete -force $DUMP_DEFINES_FILE
+set cgiModules {cgi hashing regex_posix require sqlite3 uuid}
+
+options-defaults "prefix [getenv HOME]"
+#dict set ::autosetup(options-defaults) prefix [getenv HOME]
+use cc cc-lib cc-shared
+########################################################################
+# Add any user options here
+options [subst -nobackslashes -nocommands {
+    ndebug=0        =>
+       "Disable -g and add -DNDEBUG to the CPPFLAGS. (NOT recommended! cwal likes assert()!)"
+    dump-defines=0  =>
+       "Writes all configure-defined vars to [$DUMP_DEFINES_FILE]."
+    compression=0   =>
+       "Enable compression support in s2.Buffer."
+    s2sh-modules:  =>
+       {A list of s2 module names to statically link in to
+        s2sh. e.g. --s2sh-modules='require FILE'.
+        Use the name 'all' to build in all available modules.}
+    obase-hash=1 =>
+       {By default CWAL_OBASE_ISA_HASH mode enabled. This flag switches
+        back to "legacy" property storage mode, which is memory-lighter
+        but computationally slower. This flag changes
+        the default which gets baked into s2/s2_config.h. It is important that
+        ALL downstream client code uses the same value.}
+    cgi=0           =>
+        "Enables s2sh static modules often used in s2 CGI scripts: $cgiModules"
+    linenoise=0     =>
+        "Skip the check for GPL-licensed libreadline and use the built-in copy of BSD-licensed linenoise for s2sh line editing."
+    no-edit=0       =>
+        "Disable both libreadline and linenoise for s2sh. Not terribly useful except to shave a few bytes from non-interactive binaries (CGIs and such)."
+    cc:            =>
+        "Specify C compiler. Overrides the value of CC and can be used to ensure that the compiler gets set properly by automatic reconfigure."
+    cxx:           =>
+        "Specify C++ compiler. Overrides the value of CXX and can be used to ensure that the compiler gets set properly by automatic reconfigure."
+    loud=0          =>
+        "Tells the build process to use verbose (more informative) output."
+    profile=0 => "Enables the -pg (profiling) compile/link flag if CC is gcc."
+    shared=0        => "Build shared libraries (default is static)."
+    no-load-module=0 => "Explicitly disables s2's module loading support and the check for a system-level module loader."
+    s2sh-static=0   => "Builds s2sh as a static binary, with the caveat that not all --s2sh-modules can be built this way. This implies --no-load-module and --whclsh-static."
+    whclsh-static=0 => "Builds whclsh as a static binary, with the caveat that not all modules can be built this way. Implies --s2sh-static."
+    no-c++  => "Specifically disable the C++ bits, even if the configure process implicitly finds a C++ compiler."
+    wh=0 => "Convenience flag which sets --cgi --s2sh-static --whclsh-static --linenoise --no-c++ for use on my web hoster and docker-based static builds."
+    with-sqlite:path|auto|none
+         => {Look for sqlite3 in the given path or automatically.}
+}]
+########################################################################
+
+if {1} {
+    # autosetup's auto-reconfigure bits don't honor the CC env var,
+    # so we'll replace CC with --cc's value, which is passed on
+    # by auto-reconfigure.
+    # https://github.com/msteveb/autosetup/issues/41
+    set cc [opt-val cc]
+    if {[string length $cc]} {
+        define CC $cc
+        define CC_FOR_BUILD $cc
+    }
+    set cxx [opt-val cxx]
+    if {[string length $cxx]} {
+        define CXX $cxx
+    }
+}
+
+use wh-common
+wh-require-bash
+
+########################################################################
+# i don't like the default CFLAGS, so...
+define CFLAGS {}
+
+########################################################################
+# If --prefix=... is set, patch the cc-xxx routines to use
+# prefix/include and prefix/lib when searching for stuff.
+set prefix [opt-val prefix]
+if {![string length $prefix]} {
+    # path lookup in cc-xxx works differently depending on whether
+    # --prefix=x is explicitly set or defaults to the same value
+    # --prefix uses, so we're going to have to hammer that into
+    # place...
+    set prefix [dict get $autosetup(options-defaults) prefix]
+}
+
+if {[string length $prefix]} {
+    msg-result "Using prefix $prefix"
+    #msg-result "Telling the cc-xxx checks to look in $prefix/include resp. $prefix/lib..."
+    #cc-with [list -cflags "-I$prefix/include -L$prefix/lib"]
+    # Aaaaaarrggggg: setting LDFLAGS here is needed for detecting libs in $prefix/lib
+    # but breaks various CC tests, e.g.:
+    # Failed: clang -g -std=c89 -c -I/home/stephan/include -L/home/stephan/lib -std=c89 -Wall -Wextra -Werror -Wpedantic conftest__.c -o conftest__.o
+    # clang: error: argument unused during compilation: '-L/home/stephan/lib' [-Werror,-Wunused-command-line-argument]
+    define-append LDFLAGS -L$prefix/lib
+    define-append CPPFLAGS -I$prefix/include
+}
+
+# Reminder: the C++ -fPIC check must come before the C99 check because
+# that check causes autosetup to include -std=c99 on future test
+# invocations, which causes all C++ checks to fail.
+cc-check-flags -Werror -Wall -Wextra -Wsign-compare
+cc-with {-lang c++} {
+    cc-check-flags -fPIC
+}
+cc-check-flags -fPIC
+
+########################################################################
+# Checks for C99 via (__STDC_VERSION__ >= 199901L). Returns 1 if so, 0
+# 0 if not.
+proc cc-check-c99 {} {
+    msg-checking "Checking for C99 via __STDC_VERSION__... "
+    if {[cctest -code {
+        #if !defined(__STDC_VERSION__) || __STDC_VERSION__<199901L
+        # error "Not C99"
+        #endif
+    }]} {
+        msg-result "got C99"
+        return 1
+    }
+    return 0
+}
+
+# The compiler may be able to run in C99 mode without -std=c99, but we
+# check for that flag anyway because without it we might inadvertently
+# be compiling against a newer C standard for purposes of flags like
+# -pedantic
+set CC_FLAG_C99 {-std=c99}
+if {![cc-check-flags $CC_FLAG_C99]} {
+    set CC_FLAG_C99 {}
+    msg-result "Compiler does not support -std=c99. We'll continue, hoping that it still supports C99."
+}
+
+if {![cc-check-c99]} {
+    user-error "cwal requires, as of 2021-07-08, C99."
+}
+
+if {![cc-check-includes stdint.h]} {
+    user-error "This tree requires <stdint.h> for fixed-sized integers and printf/scanf specifiers."
+}
+
+if {[opt-bool ndebug]} {
+    msg-result "Disabling debug! Say goodbye to all of those helpful assert()s!"
+    define-append CPPFLAGS -DNDEBUG
+    define ENABLE_DEBUG 0
+} else {
+    msg-result "Doing a debug build (this is strongly recommended for the assert()s)."
+    define-append CFLAGS -g
+    define ENABLE_DEBUG 1
+#    define-append CPPFLAGS -UNDEBUG
+}
+
+if {[opt-bool wh]} {
+    msg-result "Doing a 'wh' build..."
+    dict set ::autosetup(optset) s2sh-static 1
+    dict set ::autosetup(optset) whclsh-static 1
+    dict set ::autosetup(optset) cgi 1
+    dict set ::autosetup(optset) linenoise 1
+    dict set ::autosetup(optset) no-c++ 1
+}
+
+########################################################################
+# A proxy for cc-check-function-in-lib which "undoes" any changes that
+# routine makes to the LIBS define.
+proc my-check-function-in-lib {function libs {otherlibs {}}} {
+    set _LIBS [get-define LIBS]
+    set found [cc-check-function-in-lib $function $libs $otherlibs]
+    define LIBS $_LIBS
+    return $found
+}
+
+if {![cc-check-includes stdint.h]} {
+    user-error "This tree requires <stdint.h> for fixed-sized integers and printf/scanf specifiers."
+}
+
+cc-check-functions sigaction usleep fork
+cc-check-functions chdir getcwd realpath opendir stat lstat mkdir
+cc-check-functions regcomp 
+cc-with {-cflags {-D_BSD_SOURCE -D_POSIX_C_SOURCE=2}} {
+    cc-check-functions popen
+}
+
+# clock_gettime(2) requires -lrt on some systems:
+cc-check-function-in-lib clock_gettime rt
+
+msg-checking "#define CWAL_OBASE_ISA_HASH"
+if {[define CWAL_OBASE_ISA_HASH [opt-bool obase-hash]]} {
+    msg-result " 1"
+    puts "Using hashtables for object property storage."
+} else {
+    msg-result " 0"
+    puts "Using legacy object property storage. Use --obase-hash to switch to hashtables."
+}
+
+if {[opt-bool no-edit]} {
+    msg-result "Disabling all line editing for s2sh. Interactive shell won't work."
+    # This isn't useful except for saving a small number of bytes on
+    # non-interactive s2sh binaries (e.g. CGI-only builds).
+    define S2SH_ENABLE_READLINE 0
+    define S2SH_ENABLE_LINENOISE 0
+    define lib_readline ""
+} elseif {![opt-bool linenoise]} {
+    ########################################################################
+    # readline is only used (if at all) by s2sh. If it's not available, we
+    # fall back to a tree-local copy of the BSD-licensed linenoise editing
+    # library.
+    if {[cc-check-includes readline/readline.h] &&
+        [my-check-function-in-lib readline readline]} {
+        define S2SH_ENABLE_READLINE 1
+        define S2SH_ENABLE_LINENOISE 0
+        msg-result "Enabling libreadline for s2sh line editing."
+    } else {
+        msg-result "libreadline not found. s2sh will use the linenoise line editor."
+        define S2SH_ENABLE_READLINE 0
+        define S2SH_ENABLE_LINENOISE 1
+        define lib_readline ""
+    }
+} else {
+    msg-result "Using linenoise line editor for s2sh."
+    define S2SH_ENABLE_LINENOISE 1
+    define S2SH_ENABLE_READLINE 0
+    define lib_readline ""
+}
+
+########################################################################
+# s2.Buffer supports compression using zlib, but we normally leave
+# compression disabled because it's basically never used and it costs
+# a lot of RAM (compared to the rest of cwal/s2).
+define HAVE_ZLIB 0
+msg-checking "Checking for s2.Buffer.compression..."
+if {[opt-bool compression]} {
+    define S2_ENABLE_COMPRESSION 1
+    if {[msg-quiet cc-check-includes zlib.h]
+        && [msg-quiet my-check-function-in-lib inflateEnd z]} {
+        msg-result "zlib"
+        define HAVE_ZLIB 1
+    } else {
+        msg-result "zlib not found"
+        define S2_ENABLE_COMPRESSION 0
+    }
+} else {
+    msg-result "none"
+    define S2_ENABLE_COMPRESSION 0
+}
+
+########################################################################
+# For the s2 termbox module...
+define lib_tb_init ""
+cc-with [list -cflags "-I$prefix/include -L$prefix/lib"] {
+    if {[cc-check-includes termbox.h] && [my-check-function-in-lib tb_init termbox]} {
+        define HAVE_TERMBOX 1
+    } else {
+        define HAVE_TERMBOX 0
+    }
+}
+
+########################################################################
+# --with-sqlite=PATH checks for the first it finds of the following...
+# - PATH/sqlite3.c and PATH/sqlite3.h
+# - PATH/lib/libsqlite3* and PATH/include/sqlite3.h
+# - PATH/libsqlite3* and PATH/sqlite3.h
+define SQLITE3_CPPFLAGS {}
+define SQLITE3.C {}
+define SQLITE3_LDFLAGS {}
+set SQLITE3_LDFLAGS_EXTRA {-lpthread -lm}
+#   ^^^^^^^^^ conservative guess. We don't actually need these if libsqlite.so links to them.
+set SQLITE3_ORIGIN 0
+set sq3path [opt-val with-sqlite ""]
+if {$sq3path == "none"} {
+    msg-result "Disabling sqlite3 module."
+} else {
+    # SQLITE3_ORIGIN:
+    #   0 = none found
+    #   1 = use external/system lib
+    #   2 = use external sqlite3.[ch]
+    #   3 = use copy from this tree.
+    set moddir s2/mod/sqlite3/local
+    if {$sq3path != "auto"} {
+        if {([file exists $sq3path/sqlite3.c]) && \
+                ([file exists $sq3path/sqlite3.h]) } {
+            # Prefer sqlite3.[ch] if found.
+            set SQLITE3_ORIGIN 2
+            define SQLITE3.C $sq3path/sqlite3.c
+            define-append SQLITE3_CPPFLAGS -I$sq3path
+            msg-result "Using sqlite3.c and sqlite3.h from $sq3path"
+        } elseif { ([llength [glob -nocomplain -directory $sq3path/lib libsqlite3*]] != 0) \
+                       && ([file exists $sq3path/include/sqlite3.h]) } {
+            # e.g. --with-sqlite=/usr/local. Try $sq3path/lib/libsqlite3*
+            # and $sq3path/include/sqlite3.h
+            set SQLITE3_ORIGIN 1
+            define-append SQLITE3_CPPFLAGS -I$sq3path/include
+            define-append SQLITE3_LDFLAGS -L$sq3path/lib -lsqlite3
+            msg-result "Using -lsqlite3 from $sq3path"
+        } else {
+            # Assume $sq3path holds both the lib and header
+            cc-with [list -cflags "-I$sq3path -L$sq3path"]
+            define-append SQLITE3_CPPFLAGS -I$sq3path
+            define-append SQLITE3_LDFLAGS -L$sq3path -lsqlite3
+            msg-result "Using -lsqlite3 and sqlite3.h from $sq3path"
+        }
+    } elseif {[file exists $moddir/sqlite3.c]} {
+        msg-result "Using in-tree sqlite3.c"
+        set SQLITE3_ORIGIN 3
+        define SQLITE3.C $moddir/sqlite3.c
+        define-append SQLITE3_CPPFLAGS -I$moddir
+    } elseif {[cc-check-includes sqlite3.h] && [check-function-in-lib sqlite3_open_v2 sqlite3]} {
+        msg-result "Using system-level libsqlite3 and assuming lib/header path defaults are okay"
+        set SQLITE3_ORIGIN 1
+    }
+    if { 0 == $SQLITE3_ORIGIN } {
+        msg-result "libsqlite3 and/or sqlite3.h not found. Specify the location with --with-sqlite"
+        msg-result "sqlite3 is only for the s2 sqlite3 module, not a required component."
+    } else {
+        define-append SQLITE3_LDFLAGS $SQLITE3_LDFLAGS_EXTRA
+    }
+}
+define SQLITE3_ORIGIN $SQLITE3_ORIGIN
+
+# module-loading defaults which may be overridden...
+define S2SH_STATIC 0
+define WHCLSH_STATIC 0
+
+########################################################################
+# For s2 loadable modules we support dlopen() and lt_dlopen().
+# We'll try to detect both and let the makefile figure out which
+# one it wants to build with.
+if {[opt-bool no-load-module]} {
+    msg-result "Module loading support disabled: --no-load-module was specified."
+    wh-no-check-module-loader
+} elseif {[opt-bool s2sh-static] || [opt-bool whclsh-static]} {
+    msg-result "--s2sh-static or --whclsh-static specified, so disabling loadable module support."
+    define S2SH_STATIC 1
+    define WHCLSH_STATIC 1
+    wh-no-check-module-loader
+} else {
+    wh-check-module-loader
+}
+
+########################################################################
+# --s2sh-modules=xxx can be used to provide a list of loadable modules
+# to statically compile in to s2sh. The --cgi option adds a hard-coded
+# list of modules which s2cgi just happens to use. (Believe it or not,
+# i run s2sh CGI scripts on my website.)
+define S2SH_STATIC_MODULES [join [opt-val s2sh-modules] " "]
+if {[opt-bool cgi]} {
+    msg-result "s2sh CGI mode: adding static modules: $cgiModules"
+    define-append S2SH_STATIC_MODULES $cgiModules
+}
+
+# Verify that we have the files needed for all provided
+# module names... (saves us failing at build-time later).
+# It's okay if the list gets dupes - the makefile with $(sort)
+# them away.
+set s2sh_static_modules [lsort -unique [get-define S2SH_STATIC_MODULES]]
+if {[string length "$s2sh_static_modules"]} {
+    msg-result "Sanity-checking s2sh modules ..."
+
+    # A dict of modules which might not be able to include...
+    set excludes [dict create \
+                      termbox [get-define HAVE_TERMBOX] \
+                     ]
+    set mods [split $s2sh_static_modules " "]
+    if {-1 != [lsearch -exact $s2sh_static_modules "all"]} {
+        set mods {}
+        # Find a list of all modules which start with a-zA-Z. We internally
+        # use an underscore for the module "_template" and don't want
+        # that included in any builds.
+        foreach {d} [glob -nocomplain s2/mod/\[a-zA-Z\]*/static_module.c*] {
+            lappend mods [lrange [split $d '/'] end-1 end-1]
+        }
+    }
+
+    # Make sure we can find the static build files for each module and
+    # that we don't include any modules for which configuration
+    # prerequisites failed...
+    set mods2 {}
+    foreach {mod} $mods {
+        set modsrc [glob -nocomplain "s2/mod/$mod/static_module.c*"]
+        if {![string length $modsrc]} {
+            user-error "Found no static_module.* for module \[$mod]."
+        }
+        msg-result "\t\[$mod]: found $modsrc"
+        set m [lrange [split $modsrc '/'] end-1 end-1]
+        set yes 1
+        if {[dict exists $excludes $m]} {
+            set yes [dict get $excludes $m]
+        }
+        if {$yes} {
+            lappend mods2 $m
+        } else {
+            msg-result "!!!\t\[$mod]: skipping due to failed prerequisites."
+        }
+    }
+    if {[string length $mods2]} {
+        msg-result "Including these static s2sh modules: $mods2"
+    } else {
+        msg-result "Not including any static s2sh modules."
+    }
+    define S2SH_STATIC_MODULES $mods2
+} else {
+    msg-result "Not statically building in any modules into s2sh."
+}
+unset s2sh_static_modules
+
+########################################################################
+# Misc flags...
+
+wh-opt-bool-01 shared BUILD_SHARED_LIBS
+if {[wh-opt-bool-01 -v loud BUILD_QUIETLY]} {
+    puts "Enabling quiet build mode. Use --loud to enable loud mode."
+}
+
+set timestamp [clock format [clock seconds] -gmt 1 -format "%Y-%m-%d %H:%M"]
+if {[cc-check-progs fossil]} {
+    define BIN_FOSSIL [get-define FOSSIL]
+    # set branch [exec fossil branch | grep -e '^*' | cut -d' ' -f2]
+    set CWAL_UUID [exec fossil info | awk {/^checkout:/{print $2, $3, $4}}]
+    define CWAL_UUID $CWAL_UUID
+    define CWAL_VERSION_STRING "cwal $CWAL_UUID configured $timestamp"
+} else {
+    define BIN_FOSSIL ""
+    define CWAL_UUID ""
+    define CWAL_VERSION_STRING "cwal version unknown, configured $timestamp"
+}
+
+if {"" != [wh-bin-define dot]} {
+    define DOXYGEN_HAVE_DOT "YES"
+} else {
+    define DOXYGEN_HAVE_DOT "NO"
+}
+wh-bin-define doxygen
+
+########################################################################
+# reminder: the check for various cc flags really needs to be at the
+# end of this file because they otherwise break cc-check-xxx by
+# including these flags in subsequent calls, and cc-check-xxx very
+# much relies on lenient compilation (no -Wall -Werror). Been there,
+# done that.
+cc-with {-cflags {-Wall -Wextra -Werror}} {
+    # without ^^^^^ clang passes some flags but warns or ignores them at build-time
+    if {![cc-check-flags -Wpedantic]} {
+        # gcc switched from -pedantic to -Wpedantic at some point...
+        cc-check-flags -pedantic
+    }
+    # i HATE (HATE!) gcc for this:
+    cc-check-flags -Wimplicit-fallthrough=4
+}
+
+# check-standards MUST come AFTER the C++ flags are checked or
+# else _those_ tests will fail because -std=cXX will be included
+# in the C++ flags checks. Grrrrrrr.
+#
+# Reminder: cwal was C89 until 2021-07-08, at which point it was
+# "updated" to C99.
+cc-check-standards c99
+
+if {[opt-bool no-c++]} {
+    define ENABLE_CXX 0
+    msg-result "Explicitly unsetting CXX for --no-c++ flag."
+    define CXX ""
+    # ^^^ don't use (undefine CXX) b/c then @CXX@ won't get replaced
+    # in the filtered files.
+} elseif {"" ne [get-define CXX ""]} {
+    define ENABLE_CXX 1
+}
+
+# Ugly kludge: CXX is getting set to "false" if c++ is not installed.
+# https://github.com/msteveb/autosetup/issues/53
+set cxxCheck [get-define CXX]
+if {false eq $cxxCheck} {
+    msg-result "Un-false'ing CXX :/"
+    define CXX ""
+}
+
+msg-checking "gprof profiling? "
+if {[wh-check-profile-flag profile]} {
+  msg-result "gcc detected: building with profiling option."
+  # Add CC_PROFILE_FLAG to CFLAGS and LDFLAGS in config.make.in.
+} else {
+  msg-result "no. Use --profile and gcc to enable."
+}
+
+
+########################################################################
+# And now, finally, write our output...
+set AUTOCONFIG_H include/wh/cwal/autoconfig.h
+define AUTOCONFIG_H $AUTOCONFIG_H
+make-config-header $AUTOCONFIG_H -auto {HAVE*}
+# Each filename X in this list requires a counterpart named X.in.
+wh-make-from-dot-in {
+    auto.make
+    GNUmakefile
+    make-cwal.make
+    make-s2.make
+    make-t10n.make
+    make-whcl.make
+    make-cliapp.make
+    include/wh/cwal/s2/s2_config.h
+    include/wh/cwal/whcl/whcl_config.h
+    doc/Doxyfile
+    doc/Doxyfile-amalgamation
+}
+
+if {[opt-bool dump-defines]} {
+    msg-result "--dump-defines is creating file: $DUMP_DEFINES_FILE"
+    make-config-header $DUMP_DEFINES_FILE -auto {*}
+}

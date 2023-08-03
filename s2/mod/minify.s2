@@ -1,0 +1,3 @@
+const fn = (s2.ARGV && s2.ARGV.nonFlags) ? s2.ARGV.nonFlags.0 : undefined;
+affirm typeinfo(isstring fn);
+print(s2.minifyScript(s2.Buffer.readFile(fn)));

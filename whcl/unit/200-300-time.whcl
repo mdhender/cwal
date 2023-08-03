@@ -1,0 +1,19 @@
+whcl.install-api time
+decl -const T whcl.time
+
+foreach n [array sleep time mssleep mstime strftime] {
+    assert [info is-function T[$n]]
+}
+
+decl now [T time]
+assert [info is-integer $now]
+decl t [T.mstime]
+assert [info is-number $t]; # on 32-bit builds this will be a float
+#echo "t =" [info type-name $t] $t
+#echo "now =" $now " * 1000 =" ($now * 1000)
+# fails on 32-bit builds: assert $t >= ($now * 1000)
+T.mssleep 10
+decl t2 [T.mstime]
+assert $t2 > $t
+
+# see also: ../toys/demo-strftime.whcl

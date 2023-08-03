@@ -1,0 +1,85 @@
+const regcomp = (s2.regex?s2.regex.js:0) ||| s2.loadModule('regex_js.so');
+affirm typeinfo(isfunction regcomp);
+affirm 'js' === regcomp.flavor;
+import('../regex_posix/test_rx_common.s2');
+
+const pattern = ".*(la).*";
+var re = regcomp(pattern);
+affirm "regex_js" === typeinfo(name re);
+/** Properties set on each regex: */
+affirm pattern === re.pattern;
+affirm typeinfo(isstring re.flags);
+affirm '' === re.flags;
+
+affirm true === re.test('la');
+affirm false === re.test('La');
+
+var m = re.exec('fooBlA');
+affirm false === m;
+var input = 'lalala';
+m = re.exec(input);
+affirm typeinfo(islist m);
+//print(__FLC, 'match:', m);
+affirm 2===m.#;
+affirm input === m.0;
+affirm 'la' === m.1;
+
+re.destroy() /* frees native resources (or we could wait until GC gets it) */;
+affirm 0 === catch {re.destroy()}.message.indexOf("'this'")
+  /* native C part was disconnected by destroy() */;
+
+assert 'CWAL_RC_RANGE' === catch regcomp('a','X'/*invalid pattern flag*/).codeString();
+
+/*
+  Very interesting... it doesn't matter whether we double-escape the
+  \n resp. \\n in the JS regcomp(). If we use \n then s2 will unescape
+  that, passing a literal newline byte to the C-level regcomp. If we
+  use \\n then s2 will unescape that to \n, which the native regcomp
+  will handle the unescaping of.
+
+  In the test() and exec() calls we must not double-escape them.
+
+  That does not apply to the POSIX regex, which does not 
+  understand/unescape \n.
+*/
+re = regcomp('foo[\\n]');
+affirm re.test('foo\n');
+re = regcomp('foo.', 'n');
+affirm !re.test('foo\n');
+
+re = regcomp('(\\n\\n)');
+affirm 'CWAL_RC_RANGE'===catch regcomp('x','e'/*==>EXTENDED not supported for JS regex*/).codeString();
+m = re.exec('a\n\nb');
+affirm '\n\n' === m.1;
+
+unset re;
+
+affirm !catch regcomp('(1)(2)(3)(4)(5)(6)(7)(8)(9)')
+  /* total capture limit, including whole the match, is 10 */;
+
+/* Various exception-throwing cases ... */
+
+proc(pat, msg) using{R:regcomp}{
+    affirm catch{R(pat)}.message.indexOf(msg) > 0;
+    return this;
+}
+('\\','unterminated')
+('','non-empty'
+ /* The underlying regex code supports empty regexes, but i'm having a hard time
+    conceiving of a legal use for them (except for matching an empty string),
+    so they're currently disallowed in the s2 binding. */)
+('[a-A]','invalid character class')
+('[A-Z','unterminated character class')
+('(1)(2)(3)(4)(5)(6)(7)(8)(9)(10)', 'too many captures'
+ /* compile-time limit is 10, including the whole match */)
+('(','unmatched')
+(')','unmatched')
+('a{-3}','invalid quantifier')
+('\xg','invalid escape sequence')
+    // can't seem to find a magic combination to trigger this error:
+    // ('\#','invalid escape char')
+;
+
+scope {
+    // JS-specific replace() tests
+}

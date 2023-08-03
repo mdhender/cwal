@@ -1,0 +1,58 @@
+assert 'function' === typename s2.time.strftime;
+
+print(<<<EOF
+These are all the strftime() format specifiers possibly set in the
+build as of this writing (it has several configuration options to
+turn of/on certain formats).
+      EOF);
+
+
+const formatList = {
+'%%': 'Literal percent',
+'%a': 'Abbr. weekday name',
+'%A': 'Full weekday name',
+'%b': 'Abbr. month name',
+'%e': 'day of month, blank-padded',
+'%h': 'Same as %b',
+'%B': 'Full month name',
+'%c': '??? "appropriate date/time representation"',
+'%C': 'Century as two digits',
+'%d': 'day of month, 01-31',
+'%D': '%m/%d/%y',
+'%E': 'ignored',
+'%H': 'hour, 00-23',
+'%I': 'hour, 01-12',
+'%j': 'day of year, 001-366',
+'%k': 'hour, 0-24, blank-padded',
+'%l': 'hour, 1-12, blank-padded',
+'%m': 'month, 01-12',
+'%M': 'minute, 00-59',
+'%n': '\\n',
+'%O': 'ignored',
+'%p': '"am" or "pm"',
+'%r': '%I:%M:%S %p',
+'%R': '%H:%M',
+'%S': 'seconds, 00-61',
+'%t': '\\t',
+'%T': '%H:%M:%S',
+'%u': 'ISO-8601 weeday as number 1-7, 1=Monday',
+'%U': 'week of year, Sunday as first day',
+'%v': 'dd-bbb-YYYY',
+'%V': 'ISO-8601 week number',
+'%w': 'weekday, 0-6, Sunday=0',
+'%W': 'week of year, Monday as first day',
+'%x': '??? "appropriate date representation"',
+'%X': '??? "appropriate time representation"',
+'%y': 'year, 00-99',
+'%Y': 'year with century',
+'%a, %d %b %Y %H:%M:%S +0000': 'RFC-822 (timezone/offset is hard-coded!)'
+};
+
+const now = s2.time.time(),
+      strftime = s2.time.strftime;
+foreach(@formatList.propertyKeys().sort()=>k){
+    print("Format:",k,'\n\t',formatList[k],'\n\t ==>',strftime(k, now))
+};
+
+print('Current time UTC:',strftime('%Y-%m-%d %H:%M:%S', now));
+print('Current local time:',strftime('%Y-%m-%d %H:%M:%S', now, true));

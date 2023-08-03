@@ -1,0 +1,48 @@
+
+eval {
+    decl x 1
+}
+assert [info is-local x]
+assert 1 == $x
+unset x
+
+eval -scope {
+    decl x 1
+}
+assert ![info is-local x]
+assert ![info is-declared x]
+
+decl e catch {eval {expr 1 +}}
+assert [info is-exception $e]
+unset e
+
+decl e catch {eval "expr 1 +"}
+assert undefined == $e
+set e catch {eval -> "expr 1 +"}
+assert [info is-exception $e]
+unset e
+
+decl x while {
+              true
+          } {
+    break eval hello
+}
+assert [info is-string $x]
+assert 'hello' == $x
+unset x
+
+decl f eval {{{
+
+
+    proc -anon {} {
+        return __FLC
+    }
+}}}
+/* heredoc whitespace stripping means that
+   the __FLC is on line 2 of this sub-script. */
+assert [info is-string $f]
+set f eval -> $f
+assert [info is-function $f]
+#echo 'call to f:' [f]
+assert [[f].index-of ':2,15'] > 0
+unset f

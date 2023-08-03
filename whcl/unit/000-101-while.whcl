@@ -1,0 +1,85 @@
+# pragma trace-assert 1
+decl x 1
+decl n 0
+while {$x < 10} {
+    incr n
+    incr x
+}
+assert 10 == $x
+assert 9 == $n
+
+set x [while {$x < 20} {
+    break $x
+}]
+assert 10 == $x
+
+decl z 0
+while {true} {
+    if {$x < 20} {
+        if {true} {
+            # Make sure that continue/break work in nested scopes.
+            # (This requires that the scopes propagate the scope flags
+            # from their parent scopes.)
+            incr x
+            continue
+        }
+    } else {
+        while {$z < 10} {incr z 2; continue;}
+        break
+    }
+}
+assert 20 == $x
+assert 10 == $z
+
+assert "hello" == [while {true} {
+  break "hello"
+}]
+
+set x 0
+set n 0
+set z 0
+do {
+    incr x
+    incr n 2
+} while {$x<10}
+assert 10 == $x
+assert 20 == $n
+set x 0;
+set n [do {
+    if {[incr x] == 10} {
+        if {true} { break $x }
+    } else {
+        decl d [do {break $x} while {false}]
+        assert $x == $d
+        assert [info is-local d]
+    }
+    assert ![info is-local d]
+} while {true}]
+assert 10 == $n
+assert 10 == $x
+
+########################################################################
+# while (...) and while [...]
+proc check {arg} {return (! ! $arg)}
+set n 0
+while [check 0] {
+    incr n
+}
+assert 0 == $n
+incr n
+while [check $n] {
+    decr n
+}
+assert 0 == $n
+while (!$n) {incr n}
+assert 1 == $n
+while ($n) {decr n}
+assert 0 == $n
+
+########################################################################
+# do {...} while (...)
+# do {...} while [...]
+do { incr n } while (!$n)
+assert 1 == $n
+do { decr n } while [check $n]
+assert 0 == $n

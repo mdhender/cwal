@@ -1,0 +1,309 @@
+########################################################################
+# Buffer class tests
+
+decl -const B whcl[Buffer]
+
+eval -scope {
+    decl b new B
+    assert ![b capacity]
+    assert ![b length]
+    b length 10
+    assert 10 == [b length]
+    assert [b capacity] >= [b length]
+}
+
+eval -scope {
+    decl -const sz 20
+    decl -const b new B $sz
+    assert ![b length]
+    assert [b is-empty]
+    assert [b capacity] >= $sz
+    b append a
+    assert ![b is-empty]
+    assert 1 == [b length]
+    b appendf '%1$d' 1
+    assert 2 == [b length]
+
+    b fill 42
+    assert '**' == [b to-string] /* ensure that fill() does not change the length() */
+
+    b reset;
+    assert 0 == [b length]
+    b fill '!'
+    assert undefined == [b byte-at 0] /* ensure that fill() does not change the length() */;
+
+    b length $sz
+    b fill '$'
+    assert 36 == [b byte-at 0]
+    assert 36 == [b byte-at [expr $sz - 1]]
+    assert undefined == [b byte-at $sz];
+
+    b fill '!' 1 18
+    assert 36 == [b byte-at 0]
+    assert 36 == [b byte-at 19]
+    assert 33 == [b byte-at 1]
+    assert 33 == [b byte-at 18]
+    assert '$!' == [b to-string 0 2]
+
+}
+
+eval -scope {
+    proc fmt {str} {
+        $b reset
+        appendf[apply] $b $argv
+        return [b to-string]
+    } using -scope {
+        decl -const b new B
+        decl -const appendf $b[appendf]
+    }
+
+    proc check {cmp} {
+        $argv shift
+        decl s [fmt[apply] $fmt $argv]
+        if {$s!=$cmp} {
+            echo "Mismatch: <<<" $cmp ">>> !== <<<" $s ">>>"
+            throw "Mismatch!"
+        }
+        assert $s == $cmp
+    } using {fmt $fmt}
+
+    decl -const av array (42
+                          "string formatter"
+                          "abcde"
+                          19.17 true false -13.19)
+    #    assert 'CWAL_RC_RANGE' === catch{fmt("%8$+f", 0)/*not enough args*/}.codeString();
+    assert [catch { fmt "%8$+f" 0 /*not enough args*/}]
+
+    check '%' '%%'
+    check '%x%y' '%%x%%y'
+    check 'hi, world' "%1$s" 'hi, world'
+    check 'hi, world (           hi, world)' \
+          "%1$s (%1$20s)" 'hi, world'
+    check 'integer 42 042 02A 002a' \
+        "%1$y %1$d %1$03d %1$03X %1$04x" $av[0]
+    check '(        42) (42        )' \
+        "(%1$10d) (%1$-10d)" $av[0]
+    check '(       +42) (+42       )' \
+        "(%1$+10d) (%1$+-10d)" $av[0]
+
+    check '00042' "%1$05d" $av[0]
+    check '42.00000' "%1$0.5f" $av[0]
+    check 'string formatter' "%2$s" 0 $av[1]
+    check 'string' "%2$.6s" 0 $av[1]
+    check 'string formatter and string formatter' \
+        "%2$s and %2$s" 0 $av[1]
+    check '(abcde     ) (     abcde)' \
+        "(%3$-10s) (%3$10s)" 0 0 $av[2]
+    check '(     abcde) (abcde     )' \
+        "(%3$10s) (%3$-10s)" 0 0 $av[2]
+    check '(       abc) (abc       )' \
+        "(%3$10.3s) (%3$-10.3s)" 0 0 $av[2]
+    check '(abc       ) (       abc)' \
+        "(%3$-10.3s) (%3$10.3s)" 0 0 $av[2]
+    check '(abcd) (abcd    )' \
+        "(%3$.4s) (%3$-8.4s)" 0 0 $av[2]
+    check '19.17 19.2 19.17 19.170' \
+        "%4$f %4$.1f %4$.2f %4$.3f" 0 0 0 $av[3]
+    check '+19.17 (19.170    ) (    19.170) (+00019.170)' \
+        "%4$+0f (%4$-10.3f) (%4$10.3f) (%4$+010.3f)" \
+        0 0 0 $av[3]
+    check '1 true false null undefined' \
+        "%5$d %5$b %6$b %5$N %5$U" 0 0 0 0 \
+        $av[4] $av[5]
+    check '0.0' "%6$+f" 0 0 0 0 0 $av[5]
+    check '-13.19' "%7$+f" 0 0 0 0 0 0 $av[6]
+    check '68692C20776F726C64' \
+        "%1$B" "hi, world"
+    check '68692C20' \
+        "%1$.4B" "hi, world"
+    check '                     68692C20776F726C64' \
+        "%1$30B" "hi, world"
+
+    check '-1.0' '%1$.1f' -1.02
+    check '+1.0' '%1$+.1f' 1.02
+
+    check '-1' '%1$d' -1
+    check '-1' '%1$+d' -1
+    check '+1' '%1$+d' 1
+
+    check 'h' '%1$c' 'hi'
+    check '     hhhhh' '%1$10.5c' 'hi'
+    check 'hhhhh     ' '%1$-10.5c' 'hi'
+    check '  ©' '%1$3c' '©'
+   check '©©©' '%1$0.3c' '©'
+    check '©©©' '%1$.3c' '©'
+    check '©©©  ' '%1$-5.3c' '©'
+    check '  ©©©' '%1$5.3c' '©'
+    check 'A' '%1$c' 65
+    check 'AAAA' '%1$.4c' 65
+    check '10' '%1$o' 8
+    check '0010' '%1$04o' 8
+    check '  10' '%1$4o' 8
+    check '1 2 3' "%1$d %2$d %3$d" 1 2 3
+    check '(NULL)' '%1$q' null
+    check "h''i" '%1$q' "h'i"
+    check "'h''i'" '%1$Q' "h'i"
+    check 'NULL' '%1$Q' null
+
+# check 0-precision characters...
+    check '' '%1$.0c' '*'
+    check '' '%1$0.0c' '*'
+    check '  ' '%1$2.0c' '*'/* arguable, but currently true */
+
+# check urlencoding/decoding
+    check 'a%20b%26c' '%1$r' 'a b&c'
+    check 'a b&c' '%1$R' 'a%20b%26c'
+    check 'a%2zb' '%1$R' 'a%2zb'
+
+
+    unset check
+    proc check {f msg} {
+        catch x {$f apply-format}
+        affirm $x
+        affirm [x[message] index-of $msg] >= 0
+    }
+    check '%1$.1r' precision
+    check '%1$1r' width
+    check '%1$.1R' precision
+    check '%1$1R' width*
+}
+
+eval -scope {
+    decl b new B
+    b append "h©, ©orld"
+    assert '©, ©' == [b substr 1 4]
+    assert 'h©, ©orld' == [b substr 0 -1]
+    assert '©orld' == [b substr 4]
+    assert ', ©o' == [b substr 2 4]
+    b reset
+    assert '' == [b substr 1]
+}
+
+eval -scope {
+    decl b new B
+    b append 1.00;
+    assert "1.0" == [b to-string]; # bugfix check: leave final trailing 0 after the dot.
+
+    # Testing Buffer.slice()...
+    b reset
+    b append "012345"
+    proc x {expect {offset 0} {count -1}} {
+        decl v [b slice $offset $count]
+        set v [v take-string]
+        if {$expect != $v} {
+            echo "Mismatch: expecting" $expect "but got" $v
+            throw "Mismatch!"
+        }
+    } using {b $b}
+    x "012345"
+    x "012345" 0
+    x "012345" 0 -1
+    x "12345" 1 -1
+    x "12345" 1 50
+    x "5" 5 1
+    x "5" 5 10
+    x "" 5 0
+    x "1234" 1 4
+    unset x
+
+    # Buffer.replace() tests...
+    b reset
+    b append '012345'
+    proc check {needle replace expect {limit 0}} {
+        decl v [b replace $needle $replace $limit]
+        set v [v to-string]
+        affirm $expect == $v
+    } using {b $b}
+    check '1' '9' '092345'
+    check 57 42 '0*2345'
+    check '345' '**' '0*2**'
+    check '*' 'x' '0x2**' 1
+    check '0x2' '' '**'
+    check 42 0 '\0\0'
+
+    assert ![b is-empty]; # technically speaking
+    assert 2 == [b length]
+    assert 0 == [b byte-at 1]
+    decl v [b to-string]
+    assert 2 == [v length]
+    assert '\0\0' == $v
+    b reset
+    b append "012345"
+    check '1' '©' '0©2345'
+    check '345' '©©' '0©2©©'
+
+    b reset; b append "a*b*c"
+    b replace 42 33
+    assert "a!b!c" == [b to-string]
+    b reset; b append "a*b*c"
+    b replace 42 33 1
+    assert "a!b*c" == [b to-string]
+    assert CWAL_RC_RANGE == [
+                             [catch {b replace "" "x"}].code-string
+                            ]; # needle must be >0 bytes
+}
+
+
+if {true} {
+    decl b new B 100
+    decl o object {x 0 y 0}
+    b append {{{
+        for {decl i 0} {$i < 5} {incr i} {
+            incr o.x; decr o.y
+        }
+        eval 1
+    }}}
+    decl r [b eval-contents __FLC [object {o $o}]]
+    assert 1 == $r
+    assert 5 == o.x
+    assert -5 == o.y
+
+    unset o r
+    b reset
+    b append {{{
+        return object a 'a' b 'bbbb'
+    }}}
+    decl r [b eval-contents __FLC]
+    assert $r[a] == 'a'
+    assert $r[b] == 'bbbb'
+
+    unset r
+
+    b reset
+    b append {{{
+        #
+        #
+        throw 3
+        return 1
+    }}}
+    catch x {
+        b eval-contents name
+    }
+    assert $x
+    assert x[message] == 3
+    assert x[script] == name
+    assert x[line] == 3
+    assert x[column] == 8
+}
+
+if {true} {
+    decl b new B 100
+    b append 1.00
+    assert "1.0" == [b to-string]; # bugfix check: leave final trailing 0 after the dot.
+
+    b reset
+    # Ensure that eval-contents behaves safely when the being-eval'd
+    # buffer's contents are modified during evaluation. i.e. the
+    # modifications are only temporary and get discarded when
+    # eval-contents is done.
+    decl -const contents {{{
+        set o.x 2
+        b append 'abc'
+        assert 'abc' == [b take-string]
+    }}}
+    decl o object x 0
+    b append $contents
+    b eval-contents __FLC [object b $b o $o]
+    assert 2 == o.x
+    assert $contents == [b take-string]
+}

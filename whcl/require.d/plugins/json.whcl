@@ -1,0 +1,7 @@
+return object {
+    cache-it false
+    extensions [array '.json']
+    load [proc -anon {file} \
+              {return [J.parse-file $file]} \
+              using {J [whcl install-api json]}]
+}

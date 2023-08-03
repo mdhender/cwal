@@ -1,0 +1,410 @@
+/**
+   Regex API tests which apply equally to the JS and POSIX
+   implementations. This gets import()ed by the flavor-specific test
+   scripts, each of which must define regcomp to their compile
+   function before importing it.
+*/
+assert typeinfo(isfunction const regcomp = regcomp);
+affirm typeinfo(isstring regcomp.flavor);
+affirm 'CWAL_RC_CONST_VIOLATION' === catch {regcomp.flavor=1}.codeString();
+
+affirm typeinfo(iscontainer regcomp.instancePrototype);
+scope {
+    var re;
+    /* The regcomp.NEWLINE flag changes how the ^ and $ anchors work... */
+    re = regcomp('foo$');
+    affirm 'foo$' === re.pattern;
+
+    affirm typeinfo(isfunction re.destroy);
+    affirm typeinfo(isfunction re.exec);
+    affirm typeinfo(isfunction re.test);
+    affirm re.exec.prototype === re.test.prototype;
+
+    affirm 'CWAL_RC_TYPE' === catch re.test('a',null/*non-string*/).codeString();
+
+    affirm re.test('foo');
+    affirm !re.test('foo ');
+    affirm !re.test('foo\nbar');
+    // contrast these ^^^^ 4 lines with the following 4...
+    re = regcomp('foo$', 'n');
+    affirm re.test('foo');
+    affirm !re.test('foo ');
+    affirm re.test('blah foo\nbar');
+
+    // Similarly, the '^' anchor...
+    re = regcomp('^foo');
+    affirm re.test('foo');
+    affirm !re.test('bar\nfoo');
+    re = regcomp(re.pattern, 'n');
+    affirm re.test('foo');
+    affirm re.test('bar\nfoo');
+
+    /* i'm not sure why one would want NOTBOL, but here it is... */
+    re = regcomp('^foo');
+    affirm !re.test(' foo');
+    affirm re.test('foo ');
+    affirm !re.test('bar\nfoo ');
+    affirm !re.test('foo ', 'b');
+
+    re = regcomp('\nfoo');
+    affirm re.test('bar\nfoo');
+    affirm re.test('bar\nfoo', 'b') /* only affects the ^ anchor. */;
+    affirm !re.test('foo');
+
+    re = regcomp('(...)(©{2,})(.{3})', 'i');
+    affirm !re.test('abc©def');
+    affirm re.test('abc©©©def');
+    var m = re.exec('!!!aBc©©©dEf!!!');
+    affirm typeinfo(islist m);
+    //print(__FLC, re.pattern, m);
+    affirm 4 === m.#;
+    affirm 'aBc©©©dEf' === m.0;
+    affirm 'aBc' === m.1;
+    affirm '©©©' === m.2;
+    affirm 'dEf' === m.3;
+}
+
+
+scope {
+    var re;
+    re = regcomp('((HI)+)', 'i');
+    affirm typeinfo(isstring re.flags);
+    affirm 0 <= re.flags.indexOf('i');
+    affirm true === re.test("hi");
+    affirm true === re.test("byehi");
+
+    var m;
+    m = re.exec("hohihum");
+    affirm typeinfo(islist m);
+    affirm 'hi' === m.0;
+    affirm 'hi' === m.1;
+    affirm 'hi' === m.2;
+    m = re.exec('hohihihihum');
+    //print(__FLC,'matches =',m);
+    affirm 'hihihi' === m.0;
+    affirm 'hihihi' === m.1
+    // Aha: .*((HI)+) matches differently, apparently because the .* is(?) greedily slurping the first instances of 'hi'.
+    ;
+    affirm 'hi' === m.2;
+
+    re = regcomp('((hi)+)', 'i');
+    // contrast that with escaping of "basic" regexes:
+    //re = regcomp( <<<_X \(\(hi\)\+\) _X, regcomp.ICASE );
+
+    // print(__FLC,'re.pattern =', re.pattern);
+    m = re.exec( 'hoHIhIho' );
+    // print(__FLC,'matches =',m);
+    affirm 'HIhI' === m.0;
+    affirm 'HIhI' === m.1;
+    affirm 'hI' === m.2;
+
+    m = re.exec( 'hoHIhiHIho' );
+    // print(__FLC,'matches =',m);
+    affirm 'HIhiHI' === m.0;
+    affirm 'HIhiHI' === m.1;
+    affirm 'HI' === m.2;
+
+    m = re.exec('yo');
+    affirm false === m;
+
+    //m = re.exec('yo', 0/*flags*/, 20/*offset*/);
+    //affirm undefined === m /* undefined b/c out of string range. */;
+
+    re = regcomp( 'hi' );
+    affirm re.test('yohiyo') /* oh, we don't need the .* before/after */;
+    m = re.exec('yohiyo');
+    affirm 1 === m.#;
+    affirm 'hi' === m.0;
+
+    affirm 'ho' ===
+        regcomp('(h[aou])').exec('hiho').1;
+
+
+
+    re = regcomp('foo[\n]');
+    affirm re.test('foo\n');
+    re = regcomp('foo.', 'n');
+    affirm !re.test('foo\n');
+
+    re = regcomp('(\n\n)');
+    m = re.exec('a\n\nb');
+    affirm '\n\n' === m.1;
+    
+    const pattern = ".*(la).*";
+    var input = 'lalala';
+    re = regcomp(pattern, 'i');
+    affirm true === re.test('LaLA');
+    affirm false === re.test('nalona');
+    input = 'flame game';
+    m = re.exec(input);
+    affirm typeinfo(islist m);
+    //print(__FLC, 'match:', m);
+    affirm 2 === m.#;
+    affirm input === m.0;
+    affirm 'la' === m.1;
+    affirm true === re.test('lA');
+}
+
+scope {
+    // matchAll() added 20191208...
+    var re = regcomp('[a-z]+');
+    var m = re.matchAll('ABC DEF');
+    affirm !m;
+    m = re.matchAll('abc DEF ghi');
+    affirm typeinfo(isarray m);
+    affirm 2 === m.#;
+    affirm 'abc' === m.0;
+    affirm 'ghi' === m.1;
+
+    re = regcomp('((hi)+)', 'i' );
+    // ^^^ captures should have no effect on the results, other than
+    // to slow down the matching process.
+    m = re.matchAll("hiHI hibye HIhi");
+    affirm typeinfo(isarray m);
+    affirm 3 === m.#;
+    affirm 'hiHI' === m.0;
+    affirm 'hi' === m.1;
+    affirm 'HIhi' === m.2;
+}
+
+scope {
+    /**
+       matchAll(pattern, bool captureAll)
+       matchAll(pattern, int flags, bool captureAll)
+    
+       Added 20191219...
+
+       If captureAll is true, the result is false if there
+       are no matches, else it's an array of arrays
+       of matches, with each sub-array having the same structure
+       as the results of exec().
+    */
+    var re = regcomp('(a+b+)(c+d+)', 'i');
+    var m = re.matchAll("aaabbbcd AbCd", true);
+    //print(__FLC,m);
+    affirm typeinfo(islist m);
+    affirm 'aaabbbcd' === m[0].0;
+    affirm 'aaabbb' === m[0].1;
+    affirm 'cd' === m[0].2;
+    affirm 'AbCd' === m[1].0;
+    affirm 'Ab' === m[1].1;
+    affirm 'Cd' === m[1].2;
+    affirm false === re.matchAll('zzz',true);
+    affirm typeinfo(islist re.matchAll("abcd", 0, true).0);
+    affirm typeinfo(isstring re.matchAll("abcd", 0, false).0);
+}
+
+scope {
+    /**
+       replace(string input, mixed replacement
+               [int maxReplacements=0 [, int matchFlags=0]]);
+
+       Added 20200130.
+    */
+    var x = regcomp('[a-z]+');
+    affirm x.replace(' abc 123 def ', 'xxx') === ' xxx 123 xxx ';
+    affirm 'CWAL_RC_MISUSE' === catch x.replace().codeString();
+    affirm 'CWAL_RC_MISUSE' === catch x.replace(1,2).codeString();
+    affirm 'CWAL_RC_MISUSE' === catch x.replace('','',3,4,5).codeString();
+    affirm x.replace('abc def', 'xyz', 1) === 'xyz def';
+    affirm x.replace('abc def', '') === ' ';
+    affirm x.replace('123 456', '') === '123 456';
+    affirm x.replace(' abc 1a2b3 def ', proc(s){return s.toUpper()})
+        === ' ABC 1A2B3 DEF ';
+    affirm x.replace(' abc 1a2b3 def ', proc(){return ''})
+        === '  123  ';
+
+    affirm x.replace('a',[1]) === "[1]";
+    affirm 'CWAL_RC_CYCLES_DETECTED'
+        === catch x.replace('a',eval {var o={x:1}; o.y = o}).codeString();
+
+    x = regcomp('[ \t]*([a-z]+)[ \t]*(;)?');
+    affirm 'A;B;C' === x.replace( 'a\t  ;\tb; c', proc(p) {
+        const m = this.exec(p);
+        return m.2 ? m.1.toUpper()+m.2 : m.1.toUpper();
+    } );
+
+    x = regcomp('[a-z]');
+    affirm x.replace('!abcdef','x',3) === '!xxxdef';
+
+    x = regcomp('[a-z]([a-z]+)');
+    affirm 'bc e hi k'===x.replace('abc de ghi jk',proc(){
+        return $.1;
+    }, '$');
+    affirm 'bc e hi k'===
+        x.replace('abc de ghi jk',
+                  eval=>{$.1},
+                  '$E');
+
+    x = 'posix'===regcomp.flavor
+        ? regcomp('[ \t]*([a-z]+)[ \t]*(;)?', 'i')
+        : regcomp('\s*([a-z]+)\s*(;)?', 'i');
+    affirm 'A;B;C' === x.replace( 'a\t  ;\tb; c', eval=>{
+        $.2 ? $.1.toUpper()+$.2 : $.1.toUpper()
+    }, '$E' );
+    affirm 'a;b;c' === x.replace( 'A\t  ;\tB; C', proc(){
+        return $.1.toLower()+($.2?:'')
+    }, '$E' );
+}
+
+scope {
+    /**
+       split(input [, limit=0 [,matchFlags=0]])
+       Added 20200130.
+    */
+    var x = regcomp(' *; *');
+
+    affirm 'CWAL_RC_MISUSE'=== catch x.split(0/*non-string*/).codeString();
+    
+    var m = x.split('a ;  b; c');
+    //print(__FLC,m);
+    affirm 3 === m.#;
+    affirm 'a'===m.0;
+    affirm 'b'===m.1;
+    affirm 'c'===m.2;
+
+    if('js' === regcomp.flavor){
+        print(__FLC,"BUG in upstream: skipping",
+              "https://github.com/ccxvii/mujs/issues/130");
+    }else{
+        m = x.split(' ; a;  b ; c', 3);
+        affirm 3 === m.#;
+        affirm '' === m.0;
+        affirm 'a' === m.1;
+        affirm 'b' === m.2;
+    }
+
+    m = x.split(';');
+    affirm 2 === m.#;
+    affirm '' === m.0;
+    affirm '' === m.1;
+
+    m = x.split(';',1);
+    affirm 1 === m.#;
+    affirm '' === m.0;
+
+    m = x.split('');
+    affirm 1 === m.#;
+    affirm '' === m.0;
+
+    m = x.split(' ');
+    affirm 1 === m.#;
+    affirm ' ' === m.0;
+
+    if('js' == regcomp.flavor){
+        print(__FLC,"BUG in upstream regex impl: skipping ",
+              "https://github.com/ccxvii/mujs/issues/130");
+    }else{
+        m = regcomp('.').split('abc');
+        affirm 4 === m.#;
+        foreach(@m=>v) affirm '' === v;
+    }
+
+    if(0){
+        /**
+           Reminder to self: this failure is not a bug: Firefox's JS
+           engine gives the same answer.
+        */
+        m = regcomp('c$').split('abc\ndef');
+        print(__FLC,m); // ==> "abc\ndef"
+        affirm 2 === m.#;
+        affirm "ab" === m.1
+        affirm "\ndef" === m.2;
+    }
+
+    if(1){
+        /* 2020-03-01... */
+        m = regcomp(" *").split("a || b c ")
+        /* Firefox and mujs both agree that this regex
+           really should split thusly... */;
+        affirm 6 === m.#;
+        affirm 'a' === m.0; affirm '|' === m.1;
+        affirm '|' === m.2; affirm 'b' === m.3;
+        affirm 'c' === m.4; affirm '' === m.5;
+    }
+}
+
+scope {
+    /**
+       2020-02-13: added eachMatch()
+    */
+    var r = regcomp('[a-z]+');
+    const a = [];
+    r.eachMatch(
+        'abc def ghi',
+        eval=>{
+            affirm this === r;
+            affirm typeinfo(islocal $);
+            a[]=$.0;
+        }
+        /* "E$" flags are implicit when eval string is used */
+    );
+    affirm 3 === a.#;
+    affirm 'abc' === a.0;
+    affirm 'def' === a.1;
+    affirm 'ghi' === a.2;
+
+    a.length(0);
+    r.eachMatch('xyz pqr lmn', proc(m) using(a,r){
+        affirm this === r;
+        affirm !typeinfo(islocal $);
+        a[]=m;
+    });
+    affirm 3 === a.#;
+    affirm 'xyz' === a.0;
+    affirm 'pqr' === a.1;
+    affirm 'lmn' === a.2;
+
+    a.length(0);
+    r = regcomp('([a-z])([a-z])');
+    r.eachMatch('lm no pq ', proc() using(a,r){
+        affirm this === r;
+        affirm typeinfo(islocal $);
+        a[]=$.1+$.2;
+    }, '$');
+    affirm 3 === a.#;
+    affirm 'lm' === a.0;
+    affirm 'no' === a.1;
+    affirm 'pq' === a.2;
+
+    a.length(0);
+    r.eachMatch('no pq lm', eval=>{
+        affirm this === r;
+        affirm typeinfo(islocal $);
+        a[]=$.1+$.2;
+    });
+    affirm 3 === a.#;
+    affirm 'no' === a.0;
+    affirm 'pq' === a.1;
+    affirm 'lm' === a.2;
+}
+
+const String = "".prototype;
+if(const M = String.split){
+    String.split = proc(/*pattern,limit*/){
+        return argv.0 inherits X
+                ? argv.0.split(this, argv.1|||-1)
+                : M.apply(this, argv);
+    }using{M, X:regcomp.instancePrototype};
+
+    var m = "a;b;c".split(regcomp(" *; *"));
+    assert 3 === m.#;
+    assert 'c' === m.2;
+
+    m = "A;B;C".split(";");
+    assert 3 === m.#;
+    assert 'C' === m.2;
+    String.split = M;
+}
+
+if(const M = String.replace){
+    String.replace = proc(/*needle,replacement*/){
+        return argv.0 inherits X
+                ? argv.0.replace(this, argv.1)
+                : M.apply(this, argv);
+    }using{M, X:regcomp.instancePrototype};
+
+    assert 'abc' === "AbC".replace(regcomp('[A-Z]'), proc(x){return x.toLower()});
+    assert 'abc' === "Abc".replace("A","a");
+    String.replace = M;
+}

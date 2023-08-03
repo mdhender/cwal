@@ -1,0 +1,88 @@
+
+/**
+   Returns a function which creates a termbox-using event processor.
+*/
+return requireS2(['termbox/module'], proc(tb){
+   /**
+       A base class for other termbox utility classes.
+    */
+    return {
+        tb: tb,
+        //prototype: null, // nevermind: some impls use withThis().
+        __typename: 'EventProcessor',
+        /* Must be populated resp. replaced by subclasses.  keyMap
+           must a hash mapping strings (termbox key names) to event
+           handler functions. The functions get passed this object (or
+           an object subclassing it) and a termbox event
+           object. Returning a literal false (not any other falsy
+           value) will cause eventLoop() to stop looping over
+           events. All other returned results are typically ignored.
+
+           keyMap.mod must be a hash containing (if anything) a map of
+           termbox key names to handlers (as above) which get called
+           with a termbox event has mod==1 (meaning the Alt- or Esc-
+           combination was used).
+        */
+        keyMap:{#
+            '^X': proc(){return false},
+            mod: {#}
+        },
+
+        /**
+           Calls this.tb.present(). Should ideally be overwridden to
+           just present() the relevant widget(s), but that doesn't
+           suffice with subwindows. Returns this.
+        */
+        present:proc(){
+            this.tb.present(); // for subwindows, we need to update the top-level windows
+            return this;
+        },
+
+        /**
+           Requires tbEvent to be a termbox event from termbox.poll()
+           or peel(). If a handler callback is found in this.keyMap or
+           (depending on tbEvent) this.keyMap.mod, it is called with
+           (this, tbEvent) arguments and its result returned,
+           otherwise undefined is returned.
+         */
+        processEvent:proc(tbEvent){
+            affirm typeinfo(iscontainer tbEvent);
+            affirm typeinfo(ishash this.keyMap);
+            const f = ((tbEvent.mod ? affirm typeinfo(ishash const mod = this.keyMap # 'mod') : 0)
+                       ? mod
+                       : this.keyMap
+                      ) # (tbEvent.ch
+                           ? tbEvent.ch.toChar()
+                           : (tbEvent.key
+                              ? this.tb.keys # (tbEvent.key)
+                              : 'default'))
+            ;
+            return typeinfo(isfunction f) ? f(this,tbEvent) : undefined;
+        },
+        
+        /**
+           Enters an input loop, taking keystrokes until either an
+           exception is thrown or a handler in this.keyMap returns a
+           literal false to signal the end of the input
+           loop. Alternately, a handler callback may set
+           argv[0].stopEventLoop to a truthy value, in which case the
+           input loop is stopped and that property is cleared.
+
+           Returns this object.
+        */
+        eventLoop: proc(){
+            affirm typeinfo(ishash this.keyMap);
+            this.present();
+            const oldMode = this.tb.inputMode();
+            this.tb.inputMode(this.tb.inputMode.alt);
+            const ex = catch {
+                for(var e; !this.stopEventLoop && (e = this.tb.poll()); ){
+                    false===this.processEvent(e) && break;
+                }
+            };
+            unset this.stopEventLoop;
+            this.tb.inputMode(oldMode);
+            ex ? throw ex : return this;
+        }
+    };
+});

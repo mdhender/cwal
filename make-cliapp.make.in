@@ -1,0 +1,78 @@
+#!/hey/emacs/this/is/make
+#
+# This is the makefile for the "cliapp" bits shared by various other
+# subdirs. It is intended to be included from/via the main
+# GNUmakefile.
+#
+# cliapp is a mini-framework for (primarily) adding a REPL to apps,
+# as well as providing a common way to handle CLI flags. It lives in
+# $(DIR.s2) for historical reasons.
+########################################################################
+cliapp:
+ifneq (1,$(MAKING_CLEAN))
+all: cliapp
+endif
+cliapp.MAKEFILE := $(word $(words $(MAKEFILE_LIST)), $(MAKEFILE_LIST))
+
+$(call ShakeNMake.CALL.CLEAN-SET,cliapp)
+clean-root: clean-cliapp
+distclean-root: distclean-cliapp
+
+########################################################################
+# Line editing libraries...
+cliapp.ENABLE_LINENOISE ?= @S2SH_ENABLE_LINENOISE@
+cliapp.ENABLE_READLINE ?= @S2SH_ENABLE_READLINE@
+ifeq (11,$(cliapp.ENABLE_LINENOISE)$(cliapp.ENABLE_READLINE))
+  $(error Cannot enable both LINENOISE and READLINE.)
+endif
+ifneq (1,$(cliapp.ENABLE_READLINE))
+  cliapp.LDFLAGS_READLINE :=
+else
+  cliapp.LDFLAGS_READLINE ?= @lib_readline@
+endif
+# /line editing
+########################################################################
+
+########################################################################
+cliapp.CLIENT_LDFLAGS := -L. $(cliapp.LDFLAGS_READLINE)
+
+########################################################################
+# Figure out which terminal line editor to use...
+linenoise.OBJ :=
+ifeq (1,$(cliapp.ENABLE_READLINE))
+#  $(info Enabling GNU Readline)
+else ifeq (1,$(cliapp.ENABLE_LINENOISE))
+  linenoise.DIR := $(DIR.s2)/linenoise
+  ifneq (,$(wildcard $(linenoise.DIR)/*.c))
+#    $(info Enabling linenoise)
+    linenoise.OBJ := $(linenoise.DIR)/linenoise.o \
+		$(linenoise.DIR)/utf8.o $(linenoise.DIR)/stringbuf.o
+    CLEAN.cliapp += $(linenoise.OBJ)
+    linenoise.CPPFLAGS := -std=c99 -DUSE_UTF8=1 -D_BSD_SOURCE -D_DEFAULT_SOURCE
+    $(linenoise.DIR)/utf8.o: CPPFLAGS+=$(linenoise.CPPFLAGS)
+    $(linenoise.DIR)/stringbuf.o: CPPFLAGS+=-w $(linenoise.CPPFLAGS)
+    $(linenoise.DIR)/linenoise.o: CPPFLAGS+=-w $(linenoise.CPPFLAGS)
+    $(linenoise.DIR)/linenoise.o: CFLAGS:=$(filter-out -pedantic -Wpedantic -Wextra -std=c89,$(CFLAGS))
+  else
+#    $(info Linenoise files not found - not enabling)
+    cliapp.ENABLE_LINENOISE := 0
+  endif
+endif
+ifneq (1,$(cliapp.ENABLE_READLINE))
+  ifneq (1,$(cliapp.ENABLE_LINENOISE))
+#    $(info No line editing enabled)
+  endif
+endif
+# /line editing
+########################################################################
+
+cliapp.OBJ := $(DIR.s2)/cliapp.o $(linenoise.OBJ)
+
+cliapp.INCLUDES := -I$(DIR.s2)
+$(DIR.s2)/cliapp.o: CPPFLAGS+=-DCLIAPP_ENABLE_LINENOISE=$(cliapp.ENABLE_LINENOISE)
+$(DIR.s2)/cliapp.o: CPPFLAGS+=-DCLIAPP_ENABLE_READLINE=$(cliapp.ENABLE_READLINE)
+
+CLEAN.cliapp += $(cliapp.OBJ)
+$(eval $(call ADD_C_DEPS,cliapp,\
+	$(wildcard $(DIR.s2)/cliapp.[ch])\
+))

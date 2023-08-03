@@ -1,0 +1,8 @@
+/*
+  Currently just returns the mod_termbox DLL module,
+  but at some point we might want to extend that with
+  various code which is easier to implement in script
+  than C.
+*/
+return s2.termbox/* presumably the statically-linked module */
+    ||| requireS2(['dll!termbox']).0;

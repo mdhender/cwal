@@ -1,0 +1,93 @@
+#!/hey/emacs/this/is/make
+########################################################################
+# auto.make.in gets filtered by the configure process to create
+# auto.make, which should be included by interested third parties.
+ifeq (,$(S2/AUTO.MAKE-INCLUDED))
+S2/AUTO.MAKE-INCLUDED := 1
+# We use an include guard to please certain module build requirements.
+auto.make.s2 := $(word $(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST))
+
+include @abs_top_srcdir@/auto.make
+
+S2.DIR := $(patsubst %/,%,$(dir $(auto.make.s2)))
+
+S2_HAVE_ZLIB ?= @HAVE_ZLIB@
+S2_HAVE_USLEEP ?= @HAVE_USLEEP@
+S2_HAVE_CLOCK_GETTIME ?= @HAVE_CLOCK_GETTIME@
+S2_LDFLAGS_CLOCK_GETTIME ?= @lib_clock_gettime@
+S2_HAVE_REGCOMP ?= @HAVE_REGCOMP@
+S2_HAVE_DLOPEN ?= @HAVE_LIBDL@
+S2_HAVE_LTDL ?= @HAVE_LIBLTDL@
+S2_LDFLAGS_DLL_OPENER := @LDFLAGS_MODULE_LOADER@
+S2_HAVE_TERMBOX ?= @HAVE_TERMBOX@
+S2_LDFLAGS_TERMBOX ?= @lib_tb_init@
+S2_ENABLE_COMPRESSION ?= @S2_ENABLE_COMPRESSION@
+S2SH_STATIC_MODULES ?= @S2SH_STATIC_MODULES@
+S2SH_STATIC ?= @S2SH_STATIC@
+ifeq (,@CXX@)
+  S2_ENABLE_CXX := 0
+else
+  S2_ENABLE_CXX ?= 1
+endif
+S2_HAVE_POPEN ?= @HAVE_POPEN@
+S2_HAVE_FORK ?= @HAVE_FORK@
+S2_HAVE_OPENDIR ?= @HAVE_OPENDIR@
+S2_HAVE_CHDIR ?= @HAVE_CHDIR@
+S2_HAVE_GETCWD ?= @HAVE_GETCWD@
+S2_HAVE_STAT ?= @HAVE_STAT@
+
+########################################################################
+# S2_REGEX_CAPTURE_LIMIT: capture limit for both regex_posix and
+# regex_js modules (they "really should" have the same limit, for API
+# compatibility). Increasing this costs memory for each JS regex
+# instance, so keep it reasonable. For POSIX regexes it just costs
+# a bit of stack space.
+S2_REGEX_CAPTURE_LIMIT := 10
+
+########################################################################
+# Line editing libraries...
+S2SH_ENABLE_LINENOISE ?= @S2SH_ENABLE_LINENOISE@
+S2SH_ENABLE_READLINE ?= @S2SH_ENABLE_READLINE@
+ifeq (11,$(S2SH_ENABLE_LINENOISE)$(S2SH_ENABLE_READLINE))
+  $(error Cannot enable both LINENOISE and READLINE.)
+endif
+ifneq (1,$(S2SH_ENABLE_READLINE))
+  S2SH_LDFLAGS_READLINE :=
+else
+  S2SH_LDFLAGS_READLINE ?= @lib_readline@
+endif
+# /line editing
+########################################################################
+
+########################################################################
+# S2_ENABLE_LOADABLE_MODULES and friends...
+ifeq (0,$(S2SH_STATIC))
+# If we're in building s2sh statically, leave loadable modules
+# disabled, as we cannot load them when linked statically.
+ifeq (1,$(S2_HAVE_LIBDL))
+  S2_DLL_OPENER := dl
+  S2_ENABLE_LOADABLE_MODULES := 1
+  S2_HAVE_LTDL := 0
+else ifeq (1,$(S2_HAVE_LTDL))
+  S2_DLL_OPENER := ltdl
+  S2_ENABLE_LOADABLE_MODULES := 1
+  S2_HAVE_DLOPEN := 0
+else 
+  S2_DLL_OPENER := 0
+  S2_ENABLE_LOADABLE_MODULES := 0
+  S2_LDFLAGS_DLL_OPENER :=
+  # /S2_HAVE_LTDL
+endif
+# /S2_HAVE_DLOPEN
+endif
+# /S2SH_STATIC
+########################################################################
+
+########################################################################
+# Automatic reconfigure...
+$(auto.make.s2): $(auto.make.s2).in $(AUTODEPS)
+	$(AUTOREMAKE)
+
+endif
+# /S2/AUTO.MAKE-INCLUDED
+########################################################################

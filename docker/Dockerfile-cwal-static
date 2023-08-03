@@ -1,0 +1,66 @@
+FROM    alpine:edge
+# Dockerfile for building a static s2sh binary with several compiled-in
+# modules for use as a CGI driver.
+#
+# s2sh home: https://fossil.wanderinghorse.net/r/cwal
+########################################################################
+# Reminders:
+#
+# 1) We use wget instead of curl because the hoster for
+#    fossil.wanderinghorse.net blocks all curl requests
+#    but not wget. *Sigh.*
+#
+# 2) We require some extra infrastructure-level installations
+#    which aren't part of alpine's core: bash, perl
+#    (Perl is (possibly) used by the build process.)
+########################################################################
+
+# OS packages...
+RUN apk update && apk upgrade                  \
+    && apk add --no-cache                      \
+      bash wget perl gcc make tcl musl-dev     \
+      openssl-dev zlib-dev openssl-libs-static \
+      zlib-static
+
+# sqlite: Unfortunately, the download path for the sqlite3
+# amalgamation build depends on the year, so we need both the version
+# and the year here...
+#
+# As of 2021-06, we can fetch the sqlite amalgamation download path
+# with:
+# wget -q -O- https://sqlite.org/download.html | sed -n -e '/^PRODUCT,2/p' | head -1 | cut -d, -f2
+ARG sqliteVersion=3380000
+ARG sqliteYear=2022
+RUN test -d sqlite-amalgamation-${sqliteVersion} || { \
+    wget -q https://sqlite.org/${sqliteYear}/sqlite-amalgamation-${sqliteVersion}.zip \
+    && unzip sqlite-amalgamation-${sqliteVersion}.zip; \
+    }
+
+# cwal/s2 source repository:
+# repoUrl may optionally point to a local fossil server instance,
+# rather than the central server:
+ARG repoUrl=https://fossil.wanderinghorse.net/r/cwal
+# ARG repoUrl=http://192.168.178.26:8080
+
+# --build-arg cachebust=x is a cache buster :/
+ARG cachebust=0
+ARG version=trunk
+#ARG version=s2-remove-err-obj
+# Download and build s2sh and whclsh...
+RUN wget                        \
+      "${repoUrl}/tarball/cwal-src.tar.gz?name=cwal-src&uuid=${version}"  \
+      -q -O cwal-src.tar.gz     \
+    && rm -f cwal-src           \
+    && tar xzf cwal-src.tar.gz  \
+    && cd cwal-src              \
+    && ./configure              \
+      --wh --obase-hash \
+      --with-sqlite=/sqlite-amalgamation-${sqliteVersion} \
+    && make && cd s2 && make units && cd ../whcl && make units
+#
+# Reminder: we don't do a full make (w/ subdirs) b/c that tries to
+# build all modules, even those we won't use for the --cgi build.
+#
+# Reminder: we download and build as a single step because this
+# docker is almost always run immediately after committing changes
+# to cwal, so it requires a fresh download.

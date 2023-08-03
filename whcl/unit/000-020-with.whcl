@@ -1,0 +1,100 @@
+# Unit tests for the 'with' feature.
+decl o object {x 1}
+with $o {
+    assert 1 == .x
+    set .y (.x + 2)
+}
+assert 1 == o.x
+assert 3 == o.y
+
+# Scoping...
+if {1} {
+    assert ![info is-local x]
+    with $o {decl x 1}
+    assert ![info is-local y]
+}
+assert ![info is-local x]
+
+
+if {1} {
+    decl x object {z $o nope 1}
+    # Beware the limits of nested with...
+    with $x {
+        assert 1 == .nope ;# ==> x.nope
+        with .z { ;# .z ==> x.z
+            assert 1 == .x ;# ==> o.x
+            assert 3 == .y ;# ==> o.y
+            assert undefined == .nope ;# ==> o.nope
+            # However...
+            assert 1 == ..nope ; # extra dot ==> x.nope
+        }
+    }
+}
+
+assert [[catch {
+    echo .x
+}].message.index-of "'with'"] > 0
+
+# More complex property access...
+set o.p object {y {z 1}}
+with $o {
+    assert [info is-object .p.y]
+    assert [info is-object .p[y]]
+    assert .p.y.z == 1
+    assert .p[y].z == 1
+    assert .p[y][z] == 1
+    assert .p.y[z] == 1
+    set .p[y].z 2
+    assert 2 == .p.y.z
+    assert .p.y.z == .p[y].z
+    assert .p.y.z == .p[y][z]
+    assert .p.y.z == .p.y[z]
+    incr .p[y][z]
+    assert .p.y.z == 3
+    assert [info is-integer .p.[concat y][z]]
+}
+
+# Array index access...
+decl a array 1 2 3 {x 4}
+set a.x hi ;# object prop, not array entry
+with $a {
+    assert 1 == .0
+    incr .2
+    assert 4 == .2
+    decl z 2
+    assert .2 == .$z
+    assert hi == .x
+    assert 4 == .3.x
+    assert 4 == .3[x]
+    assert 4 == .3.[concat x]
+    incr .3[x]
+    assert 5 == .3.x
+    set .3.[concat y] 6
+    assert 6 == .3.y
+    assert 2 == .[expr 1]
+    assert 4 == .(1 + 1)
+}
+
+# More multi-dot...
+if {1} {
+    with $o {
+        assert 3 == .y
+        with $a {
+            assert hi == .x
+            assert 3 == ..y
+            assert [[catch {
+                eval ...x
+            }].message.index-of "'with'"] > 0
+        }
+        # Function call block ..X prop access...
+        assert [[catch {
+            proc f {} {
+                with $f {eval ..x}
+                assert 0 && "Must not be hit."
+            }
+            with $o {
+                f
+            }
+        }].message.index-of "function"] > 0
+    }
+}

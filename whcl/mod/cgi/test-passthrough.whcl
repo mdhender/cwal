@@ -1,0 +1,45 @@
+decl -const ob [whcl install-api ob]
+
+decl -const origOBLevel [ob level]
+
+########################################################################
+# In order to generate HTTP-compatible output, cgi must buffer all
+# output. It does this using the s2_ob (output buffering) API.  This
+# means that it can capture output sent to cwal_engine_output(),
+# i.e. all (properly) script-generated output. HOWEVER, in order to do
+# that we need to ensure that at least 1 buffer layer is in place
+# (beyond the one we pushed above, which exists to capture all of the
+# CGI output, including the headers).
+#
+# The CGI module rembers the init()-time ob.level() and assumes that
+# it may manage all levels pushed after that, in terms of flushing
+# their output and eventually popping them if script code fails to do
+# so.
+
+decl -const cgi (whcl.cgi
+               || (([[whcl.install-api].index-of cgi]>=0)
+                   && [whcl.install-api cgi])
+               || [whcl.load-module 'cgi.so'])
+
+cgi init
+affirm [ob level] == ($origOBLevel + 1)
+
+cgi set-content-type "text/plain"
+cgi http-status 837 "Optional comment"
+decl -const Headers object {
+    XLastGrognified "X-Last-Grognified"
+}
+cgi set-header Headers.XLastGrognified [cgi header-timestamp]
+decl -const bodyText "This is the body.\n"
+echo -n $bodyText
+
+affirm [ob level] == ($origOBLevel + 1)
+
+decl doExit true
+cgi respond-passthrough __FILE $doExit
+if{$doExit} {
+    throw "Never reached because cgi respond-passthrough exits."
+}
+affirm 0 == [ob level]
+#while {[ob level]} {ob pop}
+echo __FLC "Done!"

@@ -1,0 +1,131 @@
+#!/usr/bin/make -f
+########################################################################
+# Main makefile for libcwal.
+#
+# Top-level autosetup-filtered Makefile for libcwal and friends. This
+# particular build is for Unix platforms with GNU Make 4+.
+########################################################################
+default: all
+ROOT.MAKEFILE := $(word $(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST))
+include auto.make
+ShakeNMake.USE_MKDEPS := 0
+ShakeNMake.ETAGS.FILTER := | grep -v -e 'lib.*.[ch]'
+include shakenmake.make
+$(call ShakeNMake.CALL.CLEAN-SET,root)
+DISTCLEAN.root += $(ROOT.MAKEFILE) $(AUTOCONFIG_H)
+
+#ifeq (1,$(MAKING_CLEAN))
+# This would be really cool but apparently has no effect:
+#MAKECMDGOALS := $(filter-out cwal s2 t10n whcl cliapp,$(MAKECMDGOALS))
+#$(info Rewrote MAKECMDGOALS = $(MAKECMDGOALS))
+#endif
+
+ifneq (,$(wildcard manifest.uuid))
+  PACKAGE_VERSION := $(shell cat manifest.uuid)
+  PACKAGE_VERSION_SHORT := $(shell cut -c1-12 manifest.uuid)
+  PACKAGE_TIMESTAMP := $(shell awk '/^D /{gsub(/T/, " ", $$2); print $$2}' manifest)
+else
+  PACKAGE_VERSION := ???
+  PACKAGE_TIMESTAMP := ???
+endif
+#$(info PACKAGE_VERSION $(PACKAGE_VERSION))
+#$(info PACKAGE_TIMESTAMP $(PACKAGE_TIMESTAMP))
+
+########################################################################
+# Dependencies generation.
+deps:
+########################################################################
+# $(eval $(call ADD_C_DEPS...))
+# $1 = deps set name: must match the X part of one of the project's
+#      rule set names.
+# $2 = the list of .c/.cpp files to generate deps for.
+#
+# Creates and imports deps file named $(DEPS.$(1).make).
+#
+# Optionally set DEPS.$(1).EXTRADEPS to any extra files the generated
+# deps file should depend on.
+#
+# Optionally set DEPS.$(1).INCDIRS to any additional directories which
+# should be added to the -I CPPFLAGS. The directories containing the
+# files in $(2) are automatically added, as are $(PROJECT_INCLUDES).
+########################################################################
+# C_DEPS_MAKEFILES = list of makefiles all .o files depend on.
+C_DEPS_MAKEFILES := $(ROOT.MAKEFILE) auto.make shakenmake.make
+MKCDEP.BIN := $(DIR.tools)/mkcdep
+# ^^^ Frankly, this does a better job than (gcc -e -E ...) and is tons
+# faster. It is less portable, though, because its original authors
+# chose speed over portability. Its one disadvantage is that it does
+# not recursively process headers, so we have to pass both sources and
+# headers to it in order to get complete deps.
+$(MKCDEP.BIN): $(MKCDEP.BIN).c
+	$(CC) -o $@ $^
+CLEAN.root += $(MKCDEP.BIN)
+define ADD_C_DEPS
+DEPS.$(1).make := .deps.$(1).make
+CLEAN.$(1) += $$(DEPS.$(1).make)
+ifneq (1,$(MAKING_CLEAN))
+$$(DEPS.$(1).make): | $(MKCDEP.BIN) $$(wildcard make-$(1).make) $$(DEPS.$(1).EXTRADEPS) $(2)
+	@echo "Generating deps set [$(1)] [$$@]..."; \
+	$$(MKCDEP.BIN) $$(PROJECT_INCLUDES) \
+		$$(patsubst %,-I%,$$(sort $$(dir $(2)))) \
+		$$(patsubst %,-I%,$$(DEPS.$(1).INCDIRS)) \
+		-- $(2) > $$@
+deps-$(1): $$(DEPS.$(1).make)
+deps: deps-$(1)
+$$(eval -include $$(DEPS.$(1).make))
+endif
+endef
+# ^^^ ADD_C_DEPS
+########################################################################
+
+########################################################################
+# Subdir/module builds...
+#
+# Maintenance reminders: all relevant symbols in the sub-makefiles
+# (make-XXX.make) MUST be unique across the whole global
+# namespace. Similarly, all relevant paths must point to that
+# subdir. That is particularly of interest with the BIN/DLL/LIB and
+# CLEAN.xxx rules, which may require another level of $(var)
+# indirection for that purpose. It's also important when using
+# CPPFLAGS and such, to keep subdir-specific flags from leaking across
+# makefiles. Similarly, when using ShakeNMake.install.XXX, the install
+# vars must appended to instead of overwritten.
+########################################################################
+# INCLUDE_SINGLE_SUBMAKE includes file make-$(1).make if it exists,
+# else this is a no-op. It protects against multiple inclusion.
+INCLUDED_SUBMAKES :=
+define INCLUDE_SINGLE_SUBMAKE
+  SINGLE.$(1) := $$(wildcard make-$(1).make)
+  ifneq (,$$(SINGLE.$(1)))
+  ifneq ($(1),$$(strip $$(filter $(1),$$(INCLUDED_SUBMAKES))))
+    $(1):# kludge
+    ifneq (,$$(strip $$(filter distclean-$(1) clean-$(1),$(MAKECMDGOALS))))
+      MAKING_CLEAN.$(1):=1
+    endif
+    INCLUDED_SUBMAKES+=$(1)
+#    $$(info Importing sub-make: $(1))
+    include $$(SINGLE.$(1))
+  endif
+  endif
+endef
+
+# Each sub-make lives in make-SUBNAME.make:
+themakes := cwal cliapp s2 t10n whcl
+# ^^^ reminder to self: don't do something clever like:
+#    $(patsubst make-%,%,$(patsubst %.make.in,%,$(wildcard make-*.make.in)))
+# because their order is significant!
+ifneq (,$(filter cwal-only,$(MAKECMDGOALS)))
+$(eval $(call INCLUDE_SINGLE_SUBMAKE,cwal))
+else
+$(foreach f,$(themakes),$(eval $(call INCLUDE_SINGLE_SUBMAKE,$(f))))
+endif
+DISTCLEAN.root += $(filter-out make-cwal-only.make,$(wildcard make-*.make))
+
+$(call ShakeNMake.CALL.CLEAN-SET,doc)
+DISTCLEAN.doc += $(DIR.doc)/Doxyfile $(DIR.doc)/Doxyfile-amalgamation
+clean-root: clean-doc
+distclean-root: distclean-doc
+#clean-tools: clean-s2
+#clean-.: clean-tools
+#distclean-tools: distclean-s2
+#distclean-.: distclean-tools

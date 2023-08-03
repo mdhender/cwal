@@ -1,0 +1,19 @@
+/**
+   Test code for the 'cliargs' require.s2 module.
+*/
+s2.import('../require.d/require.s2')
+(['cliargs'],proc(a){
+    if(!a.hasFlags() && !a.hasNonFlags()){
+        throw "No script flags provided. Try passing something after '--' to s2sh, "
+            + "e.g. -- -a=b --c d e f";
+    }
+    print(__FLC, 'a =',a);
+    var x = a.takeFlag('a');
+    print(__FLC, "takeFlag('a'):",typename x, x);
+    x = a.takeFlag('b');
+    print(__FLC, "takeFlag('b'):",typename x, x);
+    while(var f = a.nextNonFlag()){
+        print(__FLC, "nextNonFlag():",f);
+    }
+    print(__FLC, 'a =',a);
+});

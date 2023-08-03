@@ -1,0 +1,503 @@
+########################################################################
+# A whcl port of require.s2, which is an approximate s2 port of
+# require.js. It implements a basic script module loading API similar
+# to require.js (https://requirejs.org).
+#
+# In short, this module acts as a loader for arbitrary other content,
+# be it whcl script code, raw file content, or "virtual" (non-file)
+# content plugged in by the user. Its usage is modelled very much of
+# off requirejs, and it will look familiar to anyone who has used that
+# library. The primary outward difference is that this one is
+# synchronous.
+#
+# See the API docs in this module's index.md file for more details.
+#
+# Example usage:
+#
+# Assume the files r1.whcl and r2.whcl live somewhere in this module's
+# search path and that both return an Object with a foo() method.
+# This is how we might import and use them:
+#
+# Assuming this module has been aliased as `R`:
+#
+# R [array r1 r2] [proc {r1 r2} {
+#     set r1.counter 1
+#     set r2.counter 1
+#     echo __FLC $r1
+#     echo __FLC $r2
+#     r1.foo
+#     r2.foo
+#     incr r1.counter
+#     incr r2.counter
+# }]
+#
+# R [array r2 r1] [proc {r2 r1} {
+#     assert 2 == r2.counter
+#     assert 2 == r1.counter
+#     # ^^^ because imported script results are cached by default
+# }]
+#
+# Author: Stephan Beal <stephan@wanderinghorse.net>
+# License: Public Domain
+########################################################################
+
+whcl install-api os fs PathFinder Script
+const realpath whcl.fs.realpath
+const getenv whcl.os.getenv
+const cliFlags whcl.ARGV.flags
+const importFileBuffer whcl.Buffer.__prototype.read-file
+assert [info is-function $importFileBuffer]
+const importFileText \
+    proc {fn} {return [[i $fn].take-string]} using {i $importFileBuffer}
+const evalFile proc {fn vars} {
+    decl b [B $fn]
+    return [b eval-contents $fn $vars]
+} using {B $importFileBuffer}
+
+#echo "This file:" __FILE
+#echo [importFileText __FILE]
+const pathFromEnv whcl.PathFinder.__prototype.path-from-env
+assert [info is-function $pathFromEnv]
+
+# Internal util for converting almost-URL-encoded plugin
+# options to a value. Treats non-existent values (undefined)
+# as true.
+proc convertQValue {v} {
+    if {undefined == $v} {return true}
+    decl x using[$v]
+    if {undefined != $x} {return $x}
+    set x [0[parse-number] $v]
+    if {undefined != $x} {return $x}
+    return $v
+} -using {
+    'true' true
+    'false' false
+    'null' null
+}
+__debug {
+    assert true == [convertQValue undefined]
+    assert true == [convertQValue 'true']
+    assert false == [convertQValue 'false']
+    assert null ==  [convertQValue 'null']
+    assert 123 ==   [convertQValue '123']
+    assert abc ==   [convertQValue 'abc']
+}
+
+# Module-internal cache of import() responses
+const modCache object
+
+# `mod` is the require.whcl module. This name is file-internal and
+# won't be exposed higher up.
+const mod object -scope {
+    const __typename 'require.whcl'
+    const pf new whcl.PathFinder
+}
+
+########################################################################
+# This "default" plugin (A) acts as the default impl for fetching
+# require()'d files and (B) is where the interface for other plugins
+# is documented.
+const PluginModel object -scope {
+    # If true, require() does not search for the filename
+    # it is given. It is assumed to be some form of
+    # virtual unique ID, maybe empty.
+    decl is-virtual false
+    decl cache-it true
+    decl path ([pathFromEnv 'whcl.require.path', 'WHCL_REQUIRE_PATH']
+          || [array '.'])
+    decl extensions ([pathFromEnv 'whcl.require.extensions', 'WHCL_REQUIRE_EXTENSIONS']
+          || [array '.whcl'])
+    # load treats its file argument as a whcl script and loads/evals
+    # it.
+    proc load {f/* opt*/} {
+        return eval -> [new whcl.Script -f $f]
+    } using {b $importFileBuffer}
+}
+set PluginModel.__prototype undefined
+
+__debug {
+    echo __FLC "PluginModel =" $PluginModel
+}
+
+set -const mod.plugins object {
+    default $PluginModel
+    # nocache plugin works just like the default but does not cache.
+    nocache {
+        cache-it false
+        load PluginModel.load
+    }
+    # Script plugin works like the default but returns its result as a
+    # new whcl.Script instance. It does not eval the instance.
+    Script {
+        load [proc {f} {
+            return new whcl.Script -f $f
+        }]
+    }
+    # text plugin loads file content as a string
+    text {
+        cache-it false
+        extensions ('.txt' '.whcl' '.html')
+        load $importFileText
+    }
+    # buffer loads file content as a buffer
+    buffer {
+        cache-id false
+        extensions ('.txt' '.whcl' '.html')
+        load $importFileBuffer
+    }
+}; # mod.plugins
+
+########################################################################
+# Installs one or more plugins into this object.
+#
+# If called with an initial string arugment then:
+#
+# - Adds a new plugin. name must be a string and pluginObj must
+#   be an object which follows the PluginModel interface. Returns
+#   pluginObj on success.
+#
+# If called with a non-string argument then:
+#
+# - name is assumed to be a container. Each of its properties is
+#   assumed to be a module definition, and each one gets installed
+#   via a call back into this function, passing it each key and
+#   value. Returns this object.
+#
+# Throws on error.
+set -const mod.add-plugin proc callee {name pluginObj} {
+    if {$name && !$pluginObj && [info is-container $name]} {
+        foreach k v $name { callee $k $v }
+        return this
+    }
+    affirm [info is-string $name]
+    affirm $name /* must be non-empty */
+    affirm [info is-container $pluginObj] && [info is-function pluginObj.load]
+    set using.R.plugins[$name] $pluginObj
+} -using {R $mod}
+
+__debug {
+    mod add-plugin just-testing [object {load [proc {} {}]}]
+    unset mod.plugins[just-testing]
+}
+
+########################################################################
+# Searches for a plugin script by using this.plugins.default's search
+# path and the name ("plugins/"+name). Returns undefined if not found,
+# else the result evaling the contents the file. It does not check if
+# the plugin is already installed, but installs (or overwrites) it
+# into mod.plugins[name].
+set -const mod.search-and-install-plugin proc {name} {
+    decl pf R.pf
+    set pf.path  R.plugins.default.path
+    set pf.extensions   R.plugins.default.extensions
+    decl fn [pf.search ['plugins/'.concat $name] pf.SEARCH_FILES]
+    return set R.plugins[$name] \
+        (($fn && [E [P $fn]])
+         || undefined)
+#    if {$fn} {
+#        return set R.plugins[$name] [evalFile [P $fn]]
+#    } else {
+#        return set R.plugins[$name] undefined
+#    }
+} using {R $mod P $realpath E $evalFile}
+
+set -const mod.get-plugin proc {name} {
+    return (R.plugins[$name] || [R.search-and-install-plugin $name])
+} using {R $mod}
+
+__debug {
+    #mod.plugins.default.path push '.'
+    echo __FLC "testing search-and-install"
+    mod search-and-install-plugin json
+    assert [info is-container mod.plugins[json]]
+}
+
+########################################################################
+# Attempts to resolve a file name using a given plugin's search
+# path. basename is the unresolved name of the file to search for and
+# forPlugin is either a plugin object or the name of a plugin. The
+# search path/extensions use are those of the given plugin or (if that
+# plugin has none), the default plugin. If the given plugin has the
+# isVirtual flag, no search is performed and the undefined value is
+# returned.
+set -const mod.resolve-filename proc {basename {forPlugin default}} {
+    decl pConf (([info is-object $forPlugin] && $forPlugin)
+                || [R.get-plugin $forPlugin])
+    affirm [info is-object $pConf]
+    const pf ((pConf.isVirtual && [return]) || mod.pf || [return])
+    set pf.path (pConf.path || R.plugins.default.prefix)
+    set pf.extensions (pConf.extensions || R.plugins.default.extensions)
+    return [pf search $basename pf.SEARCH_FILES]
+} using {R $mod}
+
+__debug {
+    echo __FLC [realpath [mod.resolve-filename __FILE]]
+}
+
+########################################################################
+# Given a base filename...
+#
+# 1) If the given name does not contain a '!' character, it searches
+# for an exact-match name in the cache. If it finds one, it returns
+# that value.
+#
+# 2) It searches for the file using the configured search
+# paths/extensions (from this.plugins). If found, it is passed to the
+# import() function specified for the import type (see below).
+#
+# By default this.plugins.default is used to search for and import the
+# file. If a "special" type of name is provided to this function,
+# though (meaning the base name looks like with "SOMETHING!basename"),
+# then this.plugins[SOMETHING] is used (if set), which may change the
+# caching behaviour and how the content of the file is interpreted.
+#
+# Depending on the configuration options, requests might get
+# cached. Subsequent calls which expand to the same file name will
+# return the same (cached) result value on each subsequent call.
+set -const mod.import proc {basename} {
+    affirm [info is-string $basename]
+    if {[basename.index-of '!'] < 0 && [decl c C[$basename]]} {
+        return $c
+    }
+    decl pluginName
+    # Check for "pluginName!...'
+    if {[decl ndx [basename.index-of '!']] > 0} {
+        set pluginName [basename.substr 0 $ndx]
+        set basename [basename.substr ($ndx + 1)]
+    }
+    #__debug {
+    #   echo __FLC "argv =" $argv
+    #   echo __FLC "basename =" $basename "pluginName =" $pluginName
+    #}
+    if {!$pluginName} { set pluginName default }
+    # Configuration for this plugin...
+    const pConf [R.get-plugin $pluginName]
+    if {!$pConf} {throw ["Could not load plugin '".concat $pluginName "'."]}
+    const pf ((!pConf.is-virtual && R.pf) || undefined)
+    if {$pf} {
+        # Set up/reset file lookup paths/extensions...
+        set pf.path (pConf.path || R.plugins.default.path)
+        set pf.extensions  (pConf.extensions  || R.plugins.default.extensions)
+    }
+    # Treat ?a=b&c=d... almost like a URL-encoded
+    # as query string, but without the URL encoding.
+    decl qArgs; decl useCache pConf.cache-it
+    if {[basename.index-of '?']>=0} {
+        # Parse args. If any are provided, bypass the cache.
+        decl sp [basename.split '?' 2]
+        set basename sp.0
+        if {[set qArgs [Q sp.1]]} { set useCache false }
+    }
+    # Find the file, if necessary...
+    decl fn
+    if {pConf.is-virtual} {
+        set fn $basename
+    } else {
+        set fn (($basename && $pf && [pf.search $basename pf.SEARCH_FILES])
+                || false)
+    }
+    if {!$fn} {
+        throw ["Plugin '%1$s' cannot find '%2$s' in search path %3$J with extensions %4$J.".apply-format
+               $pluginName $basename ($pf && pf.path) ($pf && pf.extensions)]
+    }
+    # expand to the fully qualified path for non-virtual plugins...
+    if {!pConf.is-virtual} { set fn [P $fn] }
+    #echo __FLC "fn =" $fn "useCache =" $useCache "qArgs =" $qArgs $pluginName $pConf
+    #echo __FLC 'pConf.cache-it =' pConf.cache-it 'fn =' $fn
+    #echo __FLC [C.to-json 2]
+    if {$useCache} {
+        const k (($pluginName && [$pluginName.concat '!' $fn]) || $fn)
+        const cacheCheck C[$k]
+        eval ($cacheCheck && [return $cacheCheck])
+    }
+    return [pConf.load $fn $qArgs]
+} using {
+    R $mod
+    C $modCache
+    P $realpath
+    Q [proc {str}  {
+        eval ($str || return $str)
+        decl r
+        foreach v [str.split '&'] {
+            decl s [v.split '=' 2]
+            if {!r} {set r object {__prototype null}}
+            if {s.1} {
+                set r[s.0] [q s.1]
+            } else if {[v.index-of '='] > 0} {
+                set r[s.0] s.1
+            } else {
+                set r[s.0] true
+            }
+        }
+        return $r
+    } using {q $convertQValue}]
+}
+
+__debug {
+    decl x [mod.import just-testing]
+    echo __FLC $x
+}
+
+########################################################################
+# For each base filename in the given array/tuple, this function
+# calls this.import(basename) and appends the results to a new
+# array.  Returns an array of the results to each import() call,
+# the order of the array's elements being the same as the calls
+# to import(). Throws if list is not an array or is empty or if
+# loading any resources fails. Propagates any exceptions.
+set -const mod.import-list proc {list}{
+    affirm [info is-list $list] /* expecting an Array or Tuple */
+    affirm ![list is-empty] /* expecting a non-empty list of module names */
+    const imps array
+    foreach v $list {imps.push [R.import $v]}
+    return $imps;
+} using {R $mod}
+
+########################################################################
+# Imports a list of script modules and optionally calls a callback
+# after loading all of them.
+#
+# The first argument must be either a string (a single module name) or
+# an array of strings (module names to import). The second argument is
+# an optional function or code string which gets called resp. eval'd
+# after importing all of the scripts.
+#
+# If the 2nd arg is a function, it is passed one argument for each
+# entry in the list, in the same order they are imported. If it is a
+# code string then it is eval'd in a scope and the loaded modules are
+# made avilable in two forms via the `modules` local var:
+#
+# 1) `modules` is an array, and each index matches up with the indexes
+#     in the list passed to this function.
+#
+# 2) The `modules` array also gets member properties set with the
+#    names matching those passed in in the list. (We cannot declare
+#    those names as local vars because the given names may well
+#    contain characters not legal for that purpose.)
+#
+# Returns the result of calling the function (if any), the result of
+# the eval'd code block, or the array of loaded modules (if passed no
+# function/string).
+#
+# Example:
+#
+#  assert 42 == [thisObj [array module1 module2] [proc {mod1 mod2} {
+#    echo 'module 1 import:' $mod1
+#    echo 'module 2 import:' $mod2
+#    return 42
+#  }
+set -const mod.require proc {list func} {
+    if {$func} {affirm [info is-function $func] || [info is-string $func]}
+    if {[info is-string $list]} {set list array $list}
+    set list [R.import-list $list]
+    if {!$func} { return $list }
+    if {[info is-function $func]} {
+        return [func.apply $func $list]
+    } else {
+        decl mods array
+        foreach i n argv[0] {
+            set -const mods[$n] list[$i]
+            mods push list[$i]
+        }
+        return [func.eval-contents "require() callback script" [object -scope {
+            const modules $mods
+        }]]
+    }
+} using {R $mod}
+
+__debug {
+    assert 1 == [mod.require [array 'nocache!just-testing'] [proc {x} {
+        echo __FLC $x; return 1
+    }]]
+}
+
+########################################################################
+# Installs a cached entry for the given module name, such that future
+# calls to import() or require() which use that exact name will return
+# the given result object. Note that the name need not be
+# filesystem-friendly. e.g. "<my-identifier>" is perfectly legal. The
+# only limitation is that it "really should not" contain an
+# exclamation point, as that may confuse import() because that
+# character is used to denote a plugin.
+#
+# Returns `this`.
+set -const mod.install-module proc {name result} {
+    set C[$name] $result
+    return this
+} using {C $modCache}
+
+__debug {
+    decl x __FLC
+    assert $mod == [mod.install-module $x 1]
+    assert 1 == modCache[$x]
+    unset modCache[$x]
+}
+
+if {[info is-string [decl d cliFlags['whcl.require.home']]]} {
+    set mod.home [realpath $d]
+    mod.plugins.default.path.push mod.home
+} else if{[set d (cliFlags['whcl.home'] || [getenv WHCL_HOME])]
+          && [set d [realpath [d.concat '/require.d']]]} {
+    mod.plugins.default.path.push [set mod.home $d]
+} else if {[set d ((__FILEDIR && [realpath __FILEDIR]) || false)]
+    && (mod.home != $d)} {
+    mod.plugins.default.path.push $d
+} else if {!mod.home && [set d [realpath __FILE]]} {
+    decl a [d.split '/']
+    a.pop
+    set a [a.join '/']
+    if {$a} {set mod.home $a}
+}
+if {!mod.home} {set mod.home ""}
+
+__debug {
+    echo __FLC '__FILE' __FILE
+    echo __FLC '__FILEDIR' __FILEDIR [realpath __FILEDIR]
+    echo __FLC 'mod.home =' mod.home
+}
+
+set mod[__prototype] mod.require
+# ^^^ this makes $mod callable, simplifying its most common
+# use.
+
+__debug {
+    mod.install-module r1 [object {
+        name "this is r1"
+        foo [proc {} {echo __FLC this.name}]
+    }]
+    mod.install-module r2 [object {
+        name "this is r2"
+        foo [proc {} {echo __FLC this.name}]
+    }]
+    assert modCache.r1 && modCache.r2
+    mod [array r1 r2] [proc {r1 r2} {
+        set r1.counter 1
+        set r2.counter 1
+        echo __FLC 'r1 =' $r1
+        echo __FLC 'r2 =' $r2
+        r1.foo
+        r2.foo
+        incr r1.counter
+        incr r2.counter
+    }]
+    assert 3 == [mod [array r2 r1] {
+        #echo "modules =" $modules modules[0] modules[1]
+        assert 'this is r1' == modules[1].name
+        assert 'this is r2' == modules.r2.name
+        assert 2 == modules.r2.counter
+        assert 2 == modules[1].counter
+        # ^^^ because imported script results are cached
+        eval 3
+    }]
+    decl x [mod.require [array r1 r2]]
+    assert [info is-array $x]
+    assert 2 == [x.length]
+    unset modCache.r1 modCache.r2
+}
+
+__debug {
+    decl x [mod 'json!testing']
+    echo __FLC x $x
+}
+
+eval $mod

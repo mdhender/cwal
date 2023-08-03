@@ -1,0 +1,70 @@
+/**
+   A basic publish-subscribe Service.
+
+   Reminder to self: this one differs from require.s2/pubsub in
+   how it requires different arguments for its pub() member.
+*/
+const $ = enum{a}.a;
+return {
+    prototype: null,
+
+    __new: proc(){},
+
+    /**
+       Subscribes listener function f to events of type e, such that f
+       will be called when e (or an equivalent value) is passed to
+       this.pub().
+
+       Returns an opaque key which can be passed to this.unsub()
+       to stop listening for news.
+    */
+    sub: proc(e, f){
+        //typeinfo(isunique e) && (e = e.value);
+        affirm typeinfo(isfunction f);
+        this[$] || (this[$]={prototype: null});
+        const key = [#e,f];
+        (this[$][e] ||| (this[$][e] = {prototype:null}))[key] = f;
+        return key;
+    } using($),
+
+    /**
+       k must be a key returned from this.sub(). This function
+       unsubscribes the lister, such that they will no longer be
+       notified when matching events are published.
+
+       Returns this object.
+    */
+    unsub: proc(k){
+        this[$] || return this;
+        affirm typeinfo(istuple k);
+        const l = this[$][k.0] ||| return this;
+        affirm typeinfo(isobject l);
+        unset l[k];
+        return this;
+    } using($),
+
+    /**
+       For each listener of event type e, its handler is called,
+       using t as its "this" and passing on all arguments after
+       the second.
+
+       Returns this object.
+    */
+    pub: proc(e,t/*...*/){
+        const s = (this[$] ? this[$][e] : 0) ||| return this;
+        affirm typeinfo(isobject s);
+        argv.shift(2);
+        foreach(s=>k,f) f.apply(t?:f, argv.slice());
+        return this;
+    } using($),
+
+    /**
+       Unsubscribes all subscribers.
+
+       Returns this object.
+    */
+    reset:proc(){
+        unset this[$];
+        return this;
+    } using($)
+};

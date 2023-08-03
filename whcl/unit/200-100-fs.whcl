@@ -1,0 +1,18 @@
+whcl install-api fs
+decl -const F whcl[fs]
+decl -const orig [F getcwd]
+F pushd "/"
+affirm [F getcwd] == "/"
+affirm 1 == [F[dir-stack] length]
+affirm $orig == F[dir-stack][0]
+affirm "/etc" == [F pushd "/etc"]
+affirm [F getcwd] == "/etc"
+affirm 2 == [F[dir-stack] length]
+affirm "/" == F[dir-stack][1]
+affirm [F getcwd] == "/etc"
+affirm '/' == [F popd]
+affirm 1 == [F[dir-stack] length]
+affirm '/' == [F getcwd]
+affirm $orig == [F popd]
+affirm $orig == [F getcwd]
+affirm [catch {F popd}]

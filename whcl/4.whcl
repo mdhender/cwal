@@ -1,0 +1,4 @@
+echo -n "Hello, "; echo "world"
+echo <<<EOF
+Here comes a sub-expression:
+EOF ">>>" [array 3 2 1] "<<<"

@@ -1,0 +1,66 @@
+#!/usr/bin/s2sh -v
+
+if (!s2.ffi) {
+  print('FFI appears to be disabled in this build.');
+  return -1;
+}
+
+var nothing = function() {
+  var f = s2.ffi;
+  var e = f.exec;
+  var t = f.test();
+
+  // Primitives
+  if (e('abs', [ f.INT, f.INT ], -42) != 42) return -10;
+  if (e('labs', [ f.LONG, f.LONG ], -9001) != 9001) return -20;
+
+  // Strings and Primitives
+  if (e('atoi', [ f.INT, f.CSTR ], '42') != 42) return -30;
+  if (e('atol', [ f.LONG, f.CSTR ], '9001') != 9001) return -40;
+  if (e('atof', [ f.DOUBLE, f.CSTR ], '3.14') != 3.14) return -50;
+
+  // Native Pointers
+  var file = e('fopen', [ f.PTR, f.CSTR, f.CSTR ], __FILE, 'r');
+  if (!file) return -60;
+  if (e('ferror', [ f.INT, f.PTR ], file) != 0) return -70;
+  var cstr = "  ";
+  if (e('fread', [ f.INT, f.PTR, f.INT, f.INT, f.PTR ], cstr, 2, 1, file) != 1) return -80;
+  e('rewind', [ f.VOID, f.PTR ], file);
+  if (e('fgets', [ f.CSTR, f.CSTR, f.INT, f.PTR ], cstr, 3, file) != '#!') return -90;
+  if (e('fclose', [ f.INT, f.PTR ], file) != 0) return -100;
+
+  // Setup Callbacks of All Types
+  var CallbackVoid = function() { };
+  var CallbackChar = function(char) { return char; };
+  var CallbackShort = function(short) { return short; };
+  var CallbackInt = function(int) { return int; };
+  var CallbackLong = function(long) { return long; };
+  var CallbackFloat = function(float) { return float; };
+  var CallbackDouble = function(double) { return double; };
+  var CallbackCstr = function(cstr) { return cstr; };
+  var CallbackPtr = function(ptr) { return ptr; };
+  CallbackChar.ffiTypes = [ f.CHAR, f.CHAR ];
+  CallbackShort.ffiTypes = [ f.SHORT, f.SHORT ];
+  CallbackInt.ffiTypes = [ f.INT, f.INT ];
+  CallbackLong.ffiTypes = [ f.LONG, f.LONG ];
+  CallbackFloat.ffiTypes = [ f.FLOAT, f.FLOAT ];
+  CallbackDouble.ffiTypes = [ f.DOUBLE, f.DOUBLE ];
+  CallbackCstr.ffiTypes = [ f.CSTR, f.CSTR ];
+  CallbackPtr.ffiTypes = [ f.PTR, f.PTR ];
+  if (e(t, [ f.INT, f.INT, f.PTR ], 0, CallbackVoid) != 0) return -110;
+  if (e(t, [ f.INT, f.INT, f.PTR ], 1, CallbackChar) != 0) return -111;
+  if (e(t, [ f.INT, f.INT, f.PTR ], 2, CallbackShort) != 0) return -112;
+  if (e(t, [ f.INT, f.INT, f.PTR ], 3, CallbackInt) != 0) return -113;
+  if (e(t, [ f.INT, f.INT, f.PTR ], 4, CallbackLong) != 0) return -114;
+  if (e(t, [ f.INT, f.INT, f.PTR ], 5, CallbackFloat) != 0) return -115;
+  if (e(t, [ f.INT, f.INT, f.PTR ], 6, CallbackDouble) != 0) return -116;
+  if (e(t, [ f.INT, f.INT, f.PTR ], 7, CallbackCstr) != 0) return -117;
+  if (e(t, [ f.INT, f.INT, f.PTR ], 8, CallbackPtr) != 0) return -118;
+
+  // Trigger Callbacks (and cross your fingers!)
+  return e(t, [ f.INT, f.INT, f.PTR ], 10, 0);
+};
+
+print('Here goes nothing...');
+var rc = nothing();
+print(rc != 0 ? 'Unfortunately, failed: ' + rc : 'Success!');;

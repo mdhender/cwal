@@ -1,0 +1,10 @@
+whcl install-api json
+decl o object {ä 1 b 2 c {d 3 e {f 4 g "fäve"}}}
+decl jsön whcl[json]
+set jsön[clöne] jsön[clone]
+decl 😀 [jsön clöne $o]
+unset jsön[clöne]
+assert 1 == $😀[ä]
+assert 3 == $😀[c][d]
+assert 4 == $😀.c[e].f
+assert fäve == $😀[c][e][g]

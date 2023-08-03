@@ -1,0 +1,104 @@
+########################################################################
+# Testing basic object member APIs...
+
+decl o object a 1 b 2
+assert 2 == [$o property-count]
+assert 2 == [o property-count]
+assert 2 == [o[property-count]]
+# ------------^^ $ prefix is optional because the [...]  makes it
+# unambiguous that we're doing property access. (This differs
+# from TCL because of how we tokenize.)
+assert ![o is-empty]
+o clear-properties
+assert 0 == [o property-count]
+assert [o is-empty]
+
+assert ![o has-own-property a]
+o set a 1
+o set b 2
+assert [o has-own-property a]
+assert 2 == [o property-count]
+assert 1 == [o get a]
+assert $o == [o unset a]
+assert undefined == [o get a]
+assert 1 == [o property-count]
+assert '{"b": 2}' == [o to-json]
+assert '{"b": 2}' == [o to-string]
+
+decl f proc {} {affirm $O==this} using {O $o}
+assert $o == [o with-this $f]
+unset f
+
+decl o2 object c 3
+assert $o2 == [o copy-properties-to $o2]
+unset o
+assert 2 == [o2 property-count]
+assert 2 == [o2 get b]
+assert 3 == [o2 get c]
+
+decl p [o2 property-keys]
+assert [info is-array $p]
+assert 2 == [p length]
+
+assert CWAL_RC_MISUSE == [[catch {o2 __command}].code-string]
+# ^^^ Ensure that we don't trigger an infinite dispatching loop and
+# cause a stack overflow at the C level.
+unset o2 p
+
+########################################################################
+# 2022-03-05: added [object -this] flag...
+decl o object -this {
+    set this.x 1
+    incr x
+    set -const this.y 1
+    assert CWAL_RC_CONST_VIOLATION == [[catch {incr this.y}].code-string]
+    assert this == this.this
+    decl z 1
+    assert 1 == this.z
+    assert [info is-function this.property-keys]; # inherited from base prototype
+    assert ![info is-declared property-keys]; # scope lookups do not search prototypes
+    unset this.__prototype
+    assert undefined == this.property-keys
+}
+assert 2 == o.x
+assert 1 == o.y
+assert undefined == o.this
+unset o
+
+
+# Ensure that property keys may be the same as BIVs/BICs...
+# They do have to be quoted in some contexts, though.
+if {true} {
+    decl o object {
+        this foreach
+        if while
+        flc __FLC
+    }
+    assert "while" == o.if; # expr requires quoting BIC names
+    assert "foreach" == o.this
+    assert [info is-string o.flc]
+    set o.__FLC 1; # In X.Y form, BIV/BIC names are simply unquoted strings
+    assert 1 == o.__FLC   ; # BIV is seen as a plain identifier here
+    assert 1 == o['__FLC']; # this syntax requires quoting of BIV
+    set o.while 1
+    assert 1 == o[while]; # BICs expand as unquoted strings here
+}
+
+# Various ways to create keys...
+if {1} {
+    decl i hi
+    decl o object {
+        "x" 1
+        {y} 2
+        { yy } 3
+        [concat z] 4
+        $i hello
+        (1 + 1) expr
+    }
+    assert 1 == o.x
+    assert 2 == o.y
+    assert 3 == o.' yy '
+    assert 4 == o.z
+    assert hello == o[$i]
+    assert o.2 == expr
+}

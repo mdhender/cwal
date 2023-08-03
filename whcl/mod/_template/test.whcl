@@ -1,0 +1,4 @@
+decl my [whcl.load-module '_template.so']
+echo __FLC "Loaded module:" $my
+assert [info is-function my.one]
+assert [info is-function my.two]

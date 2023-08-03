@@ -1,0 +1,6 @@
+whcl.require [array 'just-testing' 'install-api!fs'] [proc -anon {j fs} {
+    assert [info is-object $j]
+    assert true == j.just-testing
+    assert [info is-object $fs]
+    assert [info is-function fs.chdir]
+}]

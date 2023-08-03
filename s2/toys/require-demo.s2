@@ -1,0 +1,139 @@
+/**
+   Demo of a requirejs-like mini-framework for loading
+   various sorts of script/text files.
+*/
+var R = s2.import('../require.d/require.s2');
+//print(__FLC,R);
+
+/**
+   A custom R plugin. See the docs for the default plugin (in R's
+   source code) for details.
+*/
+R.addPlugin('myPlugin', {
+    /* Whether or not R.require() will perform file lookups for
+       this plugin. */
+    isVirtual: true,
+    /* Whether or not R.require() will cache requests for this plugin. */
+    cacheIt: true,
+    /**
+       Called by require() to "load" a given "file" (though it need
+       not load anything from anywhere, much less a file).
+    */
+    load: function callee(name,opt){
+        /* Regardless of this.cacheIt, we'll cache here for
+           demonstration purposes. The effect is that even if cacheIt
+           is false, we always return the object instance. */
+        callee.rc ||| (callee.rc = {
+            __typename: 'MyPlugin',
+            callArgs: [],
+            counter:0,
+            cached: this.cacheIt
+        });
+        ++callee.rc.counter;
+        callee.rc.callArgs[] = argv;
+        //print('my plugin called:',argv, callee.rc);
+        return callee.rc;
+    }
+});
+
+
+// Now use it similarly to requirejs...
+
+// Some scripts we want to import more than once...
+const name1 = 'require-import-1', name2 = 'require-import-2';
+
+
+R([name1, name2], proc(r1, r2){
+    r1.counter = r2.counter = 1;
+    assert 'R1' === typename r1;
+    assert 'R2' === typename r2;
+    //print(__FLC,r1);
+    //print(__FLC,r2);
+    r1.foo();
+    r2.foo();
+});
+
+R([name2, name1,
+   'json!test',
+   'json-cached!test',
+   'json-cached!test'
+  ], proc(r2, r1, json, j2, j3){
+    // note that we get cached instances back
+    assert 1 === r2.counter++;
+    assert 1 === r1.counter++;
+    print("Got data from JSON file:",json);
+    assert j2 !== json /* json is not cached, j2/j3 are */;
+    assert j2 === j3 /* json is not cached, j2/j3 are */;
+});
+
+R([
+    name2,
+    'nocache!'+name2,
+    //'placeholder!',
+    /* ^^^^^^^ BUG: this particular combination of modules is
+       triggering what appears to be a mix-up of two separate error
+       codes (return and oom, the latter one bogus). Not yet
+       sure why/where. Difficult to reproduce in other contexts,
+       and getting a breakpoint at the right place is tedious.
+    */
+   'tmpl-compiled!tmpl-demo',
+   'text!tmpl-demo',
+   'myPlugin!',
+   'myPlugin!ignored',
+   'placeholder!',
+   'buffer!'+__FILE
+  ],
+  proc(
+      r2,
+      r2NoCache,
+      tmplC, tmpl, my1, my2, my3, thisScript
+  ){
+      assert 'R2' === typename r2;
+      assert 'buffer' === typename tmplC;
+      assert 'string' === typename tmpl;
+      assert 'MyPlugin' === typename my1;
+      assert 2 === r2.counter;
+      assert 0 === r2NoCache.counter;
+      assert my1 === my2;
+      assert my1 !== my3 /* b/c of cache bypass due to ?-args */;
+      assert my1.counter === (my1.cached ? 1 : 2);
+      print(__FLC,"Read in template file via 'tmpl[-compiled]'",
+            tmplC.length(),"_bytes_ compiled,",
+            tmpl.length(),"_characters_ uncompiled.");
+      print(__FLC,"myPlugin says:", my1);
+      if(thisScript){
+          assert 'buffer' === typename thisScript;
+          print(__FLC,"This script is",
+                thisScript.length(),"bytes and",
+                thisScript.lengthUtf8(),
+                "UTF8 characters long.");
+      }
+      //scope -> tmplC;
+      //print("Raw template source:\n", tmpl);
+  }
+);
+
+if(var ex = catch {
+    print("\n**** Trying the DLL plugin. This might fail for legitimate reasons... ****\n");
+    //R.plugins.dll.cacheIt = false /* don't do this! i'm just testing lifetimes */;
+
+    // problem: the dll plugin is now loaded dynamically, so we cannot
+    // ammend its path without invoking it:
+    R.getPlugin('dll').prefix.unshift('..') /* and let's hope that
+                                               sample_module.so lives there */;
+    R(['ostream',
+       'dll!sample_module?bar&baz=true&zab=1&foo=false'
+      ],
+      proc(os, mod){
+          os << 'mod.foo() === '
+              << mod.foo()
+              << '\n';
+      });
+}){
+    print("DLL plugin test failed @ line",
+          ex.line, 'column', ex.column,
+          'of', ex.script, ':',
+          ex.code, ex.codeString(), ex.message);
+}
+
+print("\nrequire.s2 demo complete.");

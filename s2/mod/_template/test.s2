@@ -1,0 +1,4 @@
+const mod = s2.loadModule('_template.so');
+assert typeinfo(isfunction mod.one);
+assert typeinfo(isfunction mod.two);
+print(__FLC,mod);

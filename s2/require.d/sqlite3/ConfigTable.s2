@@ -1,0 +1,75 @@
+/**
+   A module object which implements a basic wrapper class for an
+   sqlite3 config db table for sqlite3 with this schema:
+
+CREATE TABLE config (
+  k TEXT PRIMARY KEY NOT NULL,
+  v TEXT DEFAULT NULL,
+  UNIQUE(k) ON CONFLICT REPLACE
+) WITHOUT ROWID;
+
+The WITHOUT ROWID part is not required. The table's name must be
+config and the (k,v) fields are required. The ON CONFLICT REPLACE is
+technically optional, as this class's set() method uses sqlite3's
+UPSERT syntax to implement that behaviour. Nonetheless, it may be
+convenient for other uses of the table.
+
+*/
+return {
+    prototype: undefined,
+
+    /**
+       Requires that its argument be a function which returns an
+       sqlite3 db handle object (possibly delaying its open() until
+       that function is called). e.g., like the one created by the
+       sqlite3/dbGetter require.s2 module. That db must have a config
+       table matching the schema shown in the class-level docs above
+       or it must be possible to create one using the class's
+       createTable() method.
+
+       The dbGetter function gets set as this.db.
+    */
+    __new: proc(dbGetter){
+        affirm typeinfo(iscallable dbGetter);
+        this.db = dbGetter;
+    },
+
+    /**
+       Fetches the value assigned to the given key from the config
+       table, or dflt if no match is found.
+    */
+    get: proc(k,dflt){
+        return this.db().selectValue(Q, k, dflt);
+    } using {
+        Q: "SELECT v FROM CONFIG WHERE k=?"
+    },
+
+    /**
+       Inserts/replaces the given key/value pair into the config
+       table. Returns this object.
+    */
+    set: proc(k,v){
+        this.db().prepare(Q).bind([k,v]).step();
+        return this;
+    } using {
+        Q: "INSERT INTO config(k,v) VALUES(?1,?2) ON CONFLICT(k) DO UPDATE SET v=?2"
+    },
+
+    /** Drops the config db table if it exists. Returns this object. */
+    dropTable: proc(){
+        this.db().exec("DROP TABLE IF EXISTS config");
+        return this;
+    },
+    /**
+       Creates the db table named config if it does not already
+       exist. Returns this object.
+    */
+    createTable: proc(){
+        this.db().exec(<<<__
+CREATE TABLE IF NOT EXISTS config(
+  k TEXT PRIMARY KEY NOT NULL, v TEXT DEFAULT NULL,
+  UNIQUE(k) ON CONFLICT REPLACE
+) WITHOUT ROWID __);
+        return this;
+    }
+};

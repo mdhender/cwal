@@ -1,0 +1,71 @@
+# Demo code for the popen2 plugin.
+decl popen whcl.popen2
+if {!$popen} {
+    if {[[whcl install-api].index-of popen2] >= 0} {
+        set popen [whcl install-api popen2]
+    } else {
+        set popen [whcl load-module 'popen2.so']
+    }
+}
+echo __FLC "Loaded mod_popen:" popen [info type-name $popen]
+assert [info type-name $popen] == 'function'
+decl cmd '/bin/ls -la'
+decl p [popen $cmd]
+assert 'popen2' == [info type-name $p]
+decl -const buf [new whcl.Buffer (1024*4)]; # destination for read()s
+if {true} {
+    if {0} {
+        # Read a bit at a time...
+        decl len 100
+        while {$len == [p.read $buf $len]} {
+            # echo "Read" $len "bytes."
+        }
+    }else{
+        affirm $p == [p read $buf]; # slurp the whole thing into buf
+    }
+    assert [buf length] > 500
+    echo "Read in" [buf length] "bytes from:" cmd
+    p close; # after this, any popen methods will throw;
+    assert [[catch{p close}].message.index-of "'this'"] == 0
+}
+
+if {true} {
+    echo "Opening up cat..."
+    set p [popen '/usr/bin/cat']
+    decl -const catIn "meow, miau"
+    p write $catIn
+    echo "Reading back from cat with piped-in content..."
+    assert 'popen2' == [info type-name [p read [buf reset]]]
+    echo 'Read back' [buf length] 'bytes:' [buf to-string]
+    assert [catIn length-bytes] == [buf length]
+    buf capacity 0
+    assert 0 == [buf length]
+    p close
+}
+
+if {false} {
+    # Not sure whether this is broken or my expectations are.
+    buf reset
+    buf read-file __FILE
+    decl -const szOrig [buf length]
+    set p [popen '/usr/bin/gzip -c']
+    assert $szOrig == [p write -close $buf]
+    echo __FLC "Wrote" $szOrig "bytes"
+    assert CWAL_RC_MISUSE == [
+        [catch {p write ""}].code-string
+    ]; # b/c of -close flag
+    echo __FLC "This read is blocking, whereas /usr/bin/cat does not?"
+    p read [buf reset]
+    decl -const szZ [buf length]
+    affirm $szOrig > $szZ
+    p close
+    set p [popen '/usr/bin/gzip -cd']
+    #echo __FLC "write"
+    p write $buf
+    buf reset
+    #echo __FLC "read"
+    p read $buf
+    affirm $szOrig == [buf length]
+}
+
+echo __FLC "Done"

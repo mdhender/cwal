@@ -1,0 +1,33 @@
+const tb = s2.import('tb-bootstrap.s2');
+var ex = catch
+    tb.requireS2(['termbox/Marquee','termbox/initScreen'], proc(Marquee, tb){
+        var w = new tb.Window(20, 1, tb.width()/2-10, tb.height()/2)
+            .defaultAttr(tb.color.white | tb.attr.bold, tb.color.blue)
+            .clear();
+        const m = new Marquee(w,0,0);
+        m.setMessage([
+            "This is a marquee.",
+            "YES, a marquee! Just like in the 1980s!"
+        ]);
+        // Set up a second one...
+        w = new tb.Window(30, 1, tb.width()/2-15, tb.height()/2+1)
+            .defaultAttr(tb.color.black, tb.color.white | tb.attr.bold)
+            .clear();
+        const m2 = new Marquee(w,0,w.height()-1).setMessage("Tap any key to quit.");
+        unset w;
+
+        // Display both marquees, using tb.peek() to wait for an event and
+        // updating the marquees if none arrives.
+        for(var tickM2=true; true; tickM2=!tickM2){
+            tb.present();
+            const ev = tb.peek(100/*wait time in ms*/);
+            ev && break;
+            tickM2 && m2.tick() /* only tick this one half as often. */;
+            m.tick();
+        };
+        //tb.poll();
+    });
+;
+tb.shutdown();
+ex && (throw ex) || unset ex;
+print("Done!");

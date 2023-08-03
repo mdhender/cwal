@@ -1,0 +1,20 @@
+/* onTrigger.s2 test code */
+requireS2(['onTrigger2'],proc(ot2){
+    const my = {x: 0, msg:undefined},
+          xx = ot2(my);
+    xx.on('hi', proc(e,msg){
+        print(__FLC,'on(hi) handler',argv);
+        ++e.target.x;
+        e.target.msg = msg;
+    });
+    xx.trigger('hi', 'there');
+    affirm 1 === my.x;
+    affirm 'there' === my.msg;
+    xx.trigger('nope', 1);
+    affirm 1 === my.x;
+    affirm 'there' === my.msg;
+    xx.trigger('hi', 'bye');
+    affirm 2 === my.x;
+    affirm 'bye' === my.msg;
+    print(__FLC, 'done');
+});

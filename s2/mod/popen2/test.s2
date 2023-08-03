@@ -1,0 +1,42 @@
+/**
+    Demo code for popenish plugin.
+*/
+const popen = s2.popen2 ||| s2.loadModule('popen2.so');
+assert popen;
+scope {
+    print(__FLC,"Loaded mod_popen:",popen);
+    assert 'function' === typeinfo(name popen);
+    //popen('/blah').write("blah") /* parent process doesn't see this error */;
+    var cmd = '/bin/ls -la';
+    var p = popen(cmd);
+    assert 'popen2' === typeinfo(name p);
+    const buf = new s2.Buffer(1024*4) /* destination for read()s */;
+    if(0){
+            // Read a bit at a time...
+        const len = 100;
+        while(len === p.read(buf,len)){
+        }
+    }else{
+        affirm p === p.read(buf) /* slurp the whole thing into buf */;
+    }
+    assert buf.length() > 500;
+    print("Read in",buf.length(),"bytes from:",cmd);
+    p.close() /* after this, any popen methods will throw */;
+    assert catch{p.close()}.message.indexOf("'this'") === 0;
+
+    print("Opening up cat...");
+    p = popen('/bin/cat');
+    var catIn = "meow, miau";
+    p.write(catIn);
+    //p.flush() /* necessary to avoid the following read() from blocking! Now done internally in read() */;
+    print("Reading back from cat with piped-in content...");
+    buf.reset() /* reset read() destination */;
+    assert 'popen2' === typeinfo(name p.read(buf));
+    print('Read back', buf.length(),'bytes:', buf.toString());
+    assert catIn.lengthBytes() === buf.length();
+    buf.capacity(0);
+    assert 0 === buf.length();
+    /* We'll let GC clean up p this time */
+    ;;
+}
+print(__FLC,"Done");

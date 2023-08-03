@@ -1,0 +1,10 @@
+/**
+  Initializes and returns the termbox module.
+  This requires that requireS2() caching be on
+  to avoid multiple initializations.
+*/
+return requireS2(['termbox/module'], proc(tb){
+  tb.init();
+  tb.inputMode(tb.inputMode.alt);
+  return tb;
+});

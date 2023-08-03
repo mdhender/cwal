@@ -1,0 +1,8 @@
+return {
+    __typename: 'R1',
+    counter: 0,
+    foo:proc(){
+        print(__FLC, this);
+        return this;
+    }
+};

@@ -1,0 +1,277 @@
+decl f proc -anon a-func{} {
+    assert [info is-array $argv]
+    assert this == $a-func
+    assert this == $this
+}
+assert [info is-function $f]
+assert [info is-local f]
+assert [info is-declared f]
+# TCL-like ^^^^ [...] syntax is also okay except where it's trumped by
+# object[property-access].
+assert ![info is-declared a-func]; # b/c of -anon
+
+f a b c
+unset f
+
+proc myFunction {a {b}} {
+    assert $myFunction == this
+    # func calls w/o an LHS object use the function itself as their
+    # `this`.
+}
+assert [info is-declared myFunction]
+assert [info is-function $myFunction]
+myFunction
+unset myFunction
+
+decl f while {true} {
+  break proc {} {}
+}
+assert [info is-function $f]
+assert [info is-local f]
+unset f
+
+proc f {a {b 2} {c 3}} {
+    return expr $a + $b + $c
+}
+assert 6 == [f 1]
+assert 4 == [f 1 0]
+assert -6 == [f -1 -2 -3]
+assert 3 == [f 1 1 1 1 1]
+
+proc -global aGlobalProc {} {
+    assert [info is-array $argv]
+    assert [info is-local argv]
+    assert [info is-object using]
+    assert [info is-local aGlobalProc]
+    assert [info is-local a]
+    assert [info is-local b]
+    assert $a == using[a]
+    assert $b == using[b]
+    return ($a + $b)
+} using -scope {
+    decl a 1
+    decl b 2
+}
+assert 3 == [aGlobalProc]
+assert [info is-exception [catch {
+  # cannot re-declare function
+  proc -global aGlobalProc {} {}
+}]]
+# We cannot `unset` something defined in a different scope,
+# but we _can_ reassign it...
+assert [info is-declared aGlobalProc]
+set aGlobalProc undefined
+assert undefined == $aGlobalProc
+
+proc usingDefaults { {a using[A]} {b using[B][c]} } {
+    return ($a + $b)
+} using {A 1 B [object c 2]}
+assert undefined == using
+assert 3 == [usingDefaults]
+assert 4 == [usingDefaults 2]
+assert 1 == [usingDefaults 0 1]
+unset usingDefaults
+
+proc stateful {} {
+    assert ![info is-local x]
+    #pragma dump-tokens -v return $(incr using[x])
+    return [incr $using[x][y] using[incr]]; # dollar is optional
+    # dollar is   ^^^^^ optional b/c using is a built-in value
+} -using {x [object y 0] incr 2}
+assert undefined == using
+assert 2 == [stateful]
+assert 4 == [stateful]
+assert 6 == [stateful]
+unset stateful
+
+proc stateful2 {} {
+    return [incr $x[y] [get-incr]]
+} using -scope {
+    decl x object {y 0}
+    proc get-incr {} {return 2}
+}
+assert undefined == using
+assert 2 == [stateful2]
+assert 4 == [stateful2]
+assert 6 == [stateful2]
+unset stateful2
+
+
+proc av-check {{a 0} {b 1} {c 2}} {
+    # argv only lists args specifically passed in, not any extras
+    # beyond that declared in the params list.
+    assert undefined == $argv[2]
+    assert undefined == $argv[1]
+    assert undefined == $argv[0]
+}
+av-check
+assert [info is-function $av-check]
+unset av-check
+
+decl o object
+set $o[f] proc {} {
+    assert $x == this
+} using {x $o}
+$o[f]
+unset o
+# ^^^ noting that o is cyclic so is now stranded in limbo until either
+# its owning scope (this scope) pops or a vacuum is run, like so...
+pragma vacuum
+# ^^^ o was just weeded out and destroyed. That said: period vacuuming
+# is something the engine will do on its own.
+
+if {true} {; # function[call] and function[apply]...
+    decl appcall proc {who} {
+        #echo "who =" $who "this =" this
+        affirm $who[name] == this[name]
+    }
+    decl o1 object name oh-one foo $appcall
+    decl o2 object name oh-two bar $appcall
+    set $appcall[name] appy
+    appcall $appcall
+    assert $o1[foo] == $appcall
+    o1 foo $o1
+    o2 bar $o2
+    $appcall[apply] $o1 [array $o1]
+    $appcall[call] $o2 $o2
+}
+
+if {true} {; # function[import-symbols]...
+    decl imp proc {k v} {affirm using[$k] == $v}
+    assert [catch {imp}]; # using is not yet set up
+    $imp[import-symbols] [object one 1 two 2]
+    imp one 1
+    imp two 2
+    assert [catch {imp one 2}]; # mismatch
+    $imp[import-symbols]; # clear them all
+    # using was now cleared but its object still exists
+    assert ![catch {imp}]; # LOL. args both == undefined
+    assert [catch {imp 1 1}]
+    $imp[import-symbols] [object one 1 two 2]
+    imp one 1
+    imp two 2
+    $imp[import-symbols] -keep [object three 3]
+    imp one 1
+    imp two 2
+    imp three 3    
+}
+
+eval -scope {
+    proc flagged {-x
+                  -y
+                  expect} {
+        assert [info is-string $expect]
+        assert [info is-local expect]
+        #echo "-x =" $argv[-x] " -y =" $argv[-y] " argv length =" [argv length]
+        if {![eval -> $expect]} {
+            throw $expect
+        }
+    }
+    flagged {expr !$argv[-x] && !$argv[-y] && 1 == [argv length]}
+    flagged -x {expr $argv[-x] && !$argv[-y] && 2 == [argv length]}
+    flagged -y {expr !$argv[-x] && $argv[-y] && 2 == [argv length]}
+    flagged -y -x {expr $argv[-x] && $argv[-y] && 3 == [argv length]}
+}
+
+if {true} {
+    # Demonstration #1 of whcl's symbol lookup rules...
+    assert ![info is-declared x]
+    proc f {} { return $x }; # where does 'x' come from?
+    proc ff {} {
+        decl x 1
+        assert CWAL_RC_NOT_FOUND == [[catch {f}].code-string]; # x is undeclared
+        return $x
+    }
+    assert 1 == [ff];
+    assert [catch {f}]; # will throw because it cannot resolve x
+    assert ![info is-declared x]
+    eval -scope {
+        decl x 3
+        assert CWAL_RC_NOT_FOUND == [[catch {f}].code-string]
+    }
+    assert ![info is-declared x]
+}
+
+if {false} {
+    # This error is fatal to the interpreter (stack depth violation)
+    # and cannot be catch'ed so cannot be automatically tested here:
+    proc recursion {} {
+        # throw {How is the FLC looking?}
+        echo "Recursing... #" $v
+        incr $using[v]
+        recursion
+    } using {v 0}
+    recursion 0
+}
+
+if {true} {
+    # Objects which inherit functions are treated as such for command
+    # purposes... and func.source-code works.
+    proc -local foo {a} {return $a}
+    decl o object __prototype $foo
+    assert 1 == [o 1]
+    assert [foo.source-code] == 'proc -local foo {a} {return $a}'
+}
+
+if {true} {
+    # 2022-03-05: proc now recognizes when it's called in
+    # [...] and defaults to -anon in that case.
+    eval [proc f {} {}]
+    assert ![info is-local f]
+    eval [proc -local f {} {}]
+    assert [info is-local f]
+    unset f
+    assert ![info is-local f]
+    proc f {} {}
+    assert [info is-local f]
+    assert [[catch {proc {} {}}].message.index-of
+            'without a name'] > 0
+    # This case is currently caught during compilation, so we cannot
+    # trigger it at runtime (because the script never runs!):
+    #assert [[catch {eval [f;]}].message.index-of ";"] > 0
+}
+
+if {true} {
+    # Make sure that @expandos expand as desired
+    proc three {} {
+        assert 3 == [argv.length]
+    }
+    three @[array 1 2 3]
+    three @{
+        decl a array 1 2
+        a push 3
+        eval $a
+    }
+    assert ![info is-local a]; # ^^^ runs in a new scope
+    decl a array 1 2
+    decl o object x [object a (@a 3)]
+    assert 3 == o.x.a.2
+    three @o.x.a
+}
+
+if {true} {
+    # Make sure that -xsym works as expected.
+    decl x 0
+    proc f0 {} {return $x}
+    assert [catch {f0}]
+    proc -xsym f1 {} {return $x}
+    proc -xsym f2 {} {return [incr x]}
+    assert 0 == [f1]
+    assert 1 == [f2]
+    #throw __FLC
+    proc -xsym f3 {} {
+        proc f3b {} {return $x}
+        assert [catch {f3b}]
+        proc -xsym f3c {} {return incr x}
+        assert 2 == [f3c]
+        return $x
+    }
+    assert 2 == [f3]
+}
+
+if {true} {
+    proc 🙈🙉🙊 {} {}
+    assert [info is-local 🙈🙉🙊]
+}
+
+#pragma memory-metrics

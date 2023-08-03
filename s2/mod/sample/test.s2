@@ -1,0 +1,46 @@
+/**
+    Script for testing sample_module.c.
+*/
+var modSays = scope {
+  var my = s2.loadModule('sample.so');
+  print(__FLC, "Loaded module:", my);
+  assert 42 === my.theAnswer;
+  var rc = my.foo();
+  assert typeinfo(isstring rc);
+  print(__FLC, 'my.foo() says:', rc);
+  if(0){ // not necessary here, but for example's sake...
+    my.destroy(); // cleans up native immediately
+    my.foo(); // will throw a "'this' is-not-a MyModule" exception
+  }
+  rc; // implicit result of scope
+};
+
+print(__FLC,'Notice that the native was destroyed already.');
+print(__FLC,'Module said:', modSays);
+
+return /* FIXME: require.s2 tests... */;
+
+print(__FLC,"Let's try again using require.s2:");
+s2.import('../../require.d/require.s2')(
+    ['dll!sample',
+     'dll!sample' // just to demonstrate caching
+    ],
+    function(my, my2){
+        assert my === my2;
+        print(__FLC, "Loaded module:", my);
+        print(__FLC, 'my.foo() says:', my.foo());
+    });
+
+print(__FLC,
+      'Notice that the native was NOT',
+      'destroyed already because require.s2',
+      'caches DLL loads, meaning it is owned by require.s2...',
+      'which might just be cleaned up any second now if a wait a bit.');
+1;1;1;1;1; // try force a vacuum. Sweep-up won't suffice b/c Require is cyclic
+print(__FLC,
+      'Vacuuming may (depending on configuration) kick in now',
+      'and clean up the require.s2 import() (or might have',
+      'just done so), cleaning up the cached MyModule instance.',
+      "Tip: try s2sh's -W flag in conjunction with this test.");
+
+print(__FLC,"Done");

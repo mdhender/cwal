@@ -1,0 +1,105 @@
+/* cwal/s2 overrides for the Ardoise Fossil SCM skin... */
+.container {
+    /* Main page content container, including top menu bar. */
+    max-width: unset;
+}
+
+/* *:not(pre) > */ code {
+  background: #101010;
+  /*border: 1px solid #ffffff30;*/
+  border-radius: 0.2em;
+  color: #c7c7c7;
+  padding: 0.1rem 0.15em 0.15em 0.15em;
+  margin: 0;
+}
+a > code {
+  /* the styling of <a><code>...</code></a> effectively
+     hides the fact that it's a link, so... */
+  background-color: inherit;
+  color: inherit;
+}
+pre > code {
+    display: block;
+}
+div.markdown pre > code.hljs {
+    /*margin: -0.25em -0.5em;*/
+}
+div.markdown pre > code:not(.hljs) {
+    border: none /* avoid adding borders on every wrapped line */;
+}
+div.markdown pre > code {
+  background-color: inherit;
+  padding: unset;
+}
+
+div.markdown pre {
+  margin: 0 0.5em 0.5em 0.5em;
+  background-color: #101010;
+  line-height: 1.5;
+  border-radius: 0.5em;
+  padding: 0.25em 0.5em;
+}
+
+div.markdown pre > code.language-s2-member {
+  /* The doc for each class/object member conventionally goes below its signature (in this style of block),
+     and we remove the border to make it more clear that the block belongs to the text below it,
+     not above it. */
+  /*border-radius: 0.5em;
+  border-width: 1px;
+  border-color: #b5ffabd0;
+  border-style: solid;
+  border-bottom: none;*/
+  background: inherit;
+  color: #b5ffabd0;
+}
+div.markdown pre > code.language-s2-member-deprecated {
+  /*border-radius: 0.5em;
+  border-width: 1px;
+  border-color: #b5ffabd0;
+  border-style: solid;
+  border-bottom: none;
+ */
+  background: inherit;
+  color: #b5ffabd0;
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+
+textarea {
+  overflow: auto;
+  height: initial;
+  width: calc(100% - 1em);
+}
+textarea.technoteedit[name=c] {
+  height: initial;
+  min-height: unset;
+}
+
+/*
+    Prettify the markdown headers a bit (noting that
+    we intentionally don't touch header levels 4+).
+*/
+.markdown > h1, .markdown > h2, .markdown > h3 {
+    margin: 1em 0 0.5em 0;
+    font-weight: 700;
+    padding: 0.1em 0.25em 0.1em 0.25em;
+    border-radius: 0.25em;
+    border-top: 2px solid #c0c0c080;
+    border-bottom: 2px solid #c0c0c080;
+    color: #c0c0c0;
+}
+.markdown a > code {
+  /* Markdown: [`foo bar`](...) needs visual distinction from non-linked `foo bar`. */
+  border-bottom-color: #8cf;
+}
+
+blockquote.file-content {
+  margin: 0;
+}
+blockquote.file-content > pre {
+  padding: 0;
+}
+blockquote.file-content > pre > code {
+  padding: 0 0.5em;
+}

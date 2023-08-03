@@ -1,0 +1,191 @@
+########################################################################
+# Sanity tests for the whcl sqlite3 module...
+decl -const S (whcl.sqlite3
+               || (([[whcl.install-api].index-of sqlite3]>=0)
+                   && [whcl.install-api sqlite3])
+               || [whcl.load-module 'sqlite3.so'])
+__debug {echo __FLC "S =" $S}
+affirm Stmt == [info type-name S.Stmt]
+decl -const db new S "foo.db" wc
+__debug {echo __FLC "db =" $db}
+affirm 0 == [db changes]
+affirm 0 == [db total-changes]
+affirm $db == [db busy-timeout 3000]
+db exec-multi {{{
+    drop table if exists t;
+    create table t(a,b,c);
+    insert into t(a,b,c) values (1,2,3),(4,5,6);
+}}}
+affirm 2 == [db changes]
+affirm 2 == [db total-changes]
+
+whcl.install-api Script
+
+############################################################
+# db.prepare...
+if {true} {
+    decl stmt [db prepare 'select * from t limit 1']
+    affirm Stmt == [info type-name $stmt]
+    affirm [info is-list stmt.columnNames]
+    affirm 3 == [stmt.columnNames.length]
+    affirm 3 == stmt.columnCount
+    affirm 0 == stmt.parameterCount
+    affirm true == [stmt step]
+    affirm false == [stmt step]
+    stmt.reset
+    affirm $stmt == [stmt exec]
+    affirm $stmt == [stmt exec]
+    affirm $stmt == [stmt exec]
+    stmt.finalize
+    affirm CWAL_RC_TYPE == [[catch {stmt.reset}].code-string]
+}
+
+############################################################
+# Let's insert some stuff...
+if {true} {
+    decl st [db prepare "insert into t(a,b,c) values(?,?,?)"]
+    affirm 3 == st.parameterCount
+    affirm 0 == st.columnCount
+    affirm undefined == st.columnNames
+    st exec [array 3 6 9]
+    st exec 6 9 12
+    st exec ; # re-uses previous bindings
+    st clear-bindings
+    st exec ; # will use NULL bound param values
+    st finalize
+    affirm 1 == [db.changes]
+    affirm 6 == [db total-changes]
+}
+decl -const tCount [db select-value "select count(*) from t"]
+affirm 6 == $tCount
+decl x object i 0
+db each [object {
+    sql "select * from t"
+    #mode t /* t|a|o (tuple, array, object) */
+    each [proc {} {
+        incr x.i
+        affirm [info is-tuple this]
+        affirm 3 == [this length]
+    } using {x $x}]
+}]
+affirm $tCount == x.i
+
+decl st
+set x.i 0
+catch ex {
+    set st [db prepare "select * from t"]
+    decl r
+    while {[set r [st step -tuple]]} {
+        incr x.i
+        affirm [info is-tuple $r]
+    }
+}
+unset st; # will finalize it
+expr $ex && [throw $ex]
+unset ex
+affirm x.i == $tCount
+
+############################################################
+# db.transaction...
+catch ex {
+    db transaction [proc {} {
+        # this == db
+        [
+         [
+          [this prepare "insert into t(a,b,c) values (?,?,?)"].exec 8 7 6
+         ].exec 7 6 5
+        ].finalize
+        affirm ($tCount + 2) == [this select-value "select count(*) from t"]
+        throw "Aborting transaction!"
+    } using {tCount $tCount}]
+}
+affirm [info is-exception $ex]
+affirm 0 == [ex.message.index-of "Aborting"]
+unset ex
+affirm $tCount == x.i
+
+############################################################
+# various step modes for db.each...
+db each [object {
+    sql "select 1 from t limit 1"
+    each "affirm [info is-tuple this] && $tCount"
+    /* checking xsym --------------^^^^^^^^^^ */
+}]
+db each [object {
+    sql "select 1 from t limit 1"
+    each [new whcl.Script "affirm [info is-tuple this] && $tCount"]
+    /* checking each's -xsym flag ---------------------^^^^^^^^^^^ */
+}]
+db each [object {
+    sql "select 1 from t limit 1"
+    mode t
+    each "affirm [info is-tuple this]"
+}]
+db each [object {
+    sql "select 1 from t limit 1"
+    mode a
+    each [proc {} {
+        affirm [info is-array this]
+        affirm ![info is-declared tCount]
+    }]
+}]
+db each [object {
+    sql "select 1 from t limit 1"
+    mode o
+    each [proc -xsym {} {
+        affirm [info is-object this]
+        affirm [info is-integer $tCount]
+    }]
+}]
+
+############################################################
+# db.each with array target...
+if {true} {
+    decl cap array
+    db each [object {
+        sql "select * from t limit 2"
+        mode o
+        each $cap
+    }]
+    affirm 2 == [cap length]
+    affirm [info is-object cap.1]
+    db each [object {
+        sql "select * from t limit 2"
+        mode t
+        each $cap
+    }]
+    affirm 4 == [cap length]
+    affirm [info is-tuple cap.3]
+}
+
+
+############################################################
+# db.select-row ...
+if {true} {
+    decl row [db select-row "select a a, b b, c c from t"]
+    affirm [info is-object $row]
+    affirm undefined == row[__prototype]
+    set row [db select-row "select a a, b b, c c from t where b=?" [array 6]]
+    affirm [info is-object $row]
+    affirm 6 == row.b
+    set row [db select-row -tuple "select a a, b b, c c from t where b=?" [array 6]]
+    affirm [info is-tuple $row]
+    affirm 6 == row.1
+}
+
+############################################################
+# db.select-rows ...
+if {true} {
+    decl rows [db select-rows "select a, b from t"]
+    affirm [info is-array $rows]
+    affirm [info is-object rows[0]]
+    set rows [db select-rows -tuple "select a, b from t"]
+    affirm [info is-array $rows]
+    affirm [info is-tuple rows[0]]
+}
+
+############################################################
+# Manually closing db...
+
+db close
+affirm CWAL_RC_TYPE == [[catch {db prepare "select 1"}].code-string]

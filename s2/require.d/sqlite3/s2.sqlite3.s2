@@ -1,0 +1,13 @@
+/**
+   This is a kludgy workaround for various sqlite3-using scripts. If
+   s2.sqlite3 or cgi.sqlite3 are set, it resolves to that value,
+   otherwise is loads the sqlite3 module via a recursive requireS2()
+   call. If s2.sqlite3 is not set before this is run, this code sets
+   it.
+*/
+if(!s2.sqlite3){
+    var sqlite3 = typeinfo(isdeclared cgi) && typeinfo(isnative cgi) ? cgi.sqlite3 : 0;
+    if(!sqlite3) sqlite3 = requireS2.require(['dll!sqlite3']).0;
+    s2.sqlite3 = sqlite3;
+}
+return s2.sqlite3;

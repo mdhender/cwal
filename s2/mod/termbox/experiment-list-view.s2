@@ -1,0 +1,392 @@
+const tb = s2.import('tb-bootstrap.s2');
+var ex = catch {
+
+    tb.requireS2(['termbox/EventProcessor', 'termbox/initScreen'],proc(EventProcessor, tb){
+        /**
+            VERY ROUGH DRAFT of a basic selection list view, just kind of
+            thinking out loud...
+
+            Notable TODOs include:
+
+            - client callbacks for certain events (current item changed,
+            item (un)selected).
+
+        */
+        const ListView = {
+            prototype: EventProcessor,
+            defaultOptions:{
+                /* Allow multiple items to be marked selected? */
+                multiSelect: false,
+                /* Wrap around selection at begin/end? Doesn't work quite right. */
+                wrapAround: false,
+                /* Marker shown to the left of the current item only when multiSelect is true. */
+                currentItemMarker: '▶', //'▷', //"→ ",//"☺ "
+                /* Workaround for subwindow views: provide the parent window here */
+                windowToPresent: undefined,
+                debug: true
+            },
+            /**
+               Constructor. Requires
+             */
+            __new: proc(viewWin,x=0,y=0,width=0,height=0){
+                affirm typeinfo(isnewing);
+                affirm typeinfo(isnative viewWin);
+                affirm typeinfo(isfunction viewWin.print5);
+                affirm this.tb /* via the prototype */,
+                const self = 1
+                      ? {prototype:this.prototype}
+                      : this;
+                affirm self.tb;
+                affirm viewWin inherits self.tb.Window;
+                self.view = viewWin;
+                self.line = 0 /* Current item index. "Should" actually start at -1. */;
+                self.xoff = x;
+                self.yoff = y;
+                self.vw = width ||| viewWin.width()-x;
+                self.vh = height ||| viewWin.height()-y;
+                self.pageHeight = self.vh;
+                const tattr = self.tattr = {
+                    normal: viewWin.defaultAttr()
+                };
+                tattr.reversed = {
+                    fg: tattr.normal.bg,
+                    bg: tattr.normal.fg
+                };
+                tattr.selected = {
+                    fg: tattr.reversed.fg | self.tb.attr.underline,
+                    bg: tattr.reversed.bg
+                };
+                self.items = [];
+                self.opt = {
+                    prototype: self.prototype.defaultOptions
+                };
+                assert self.opt.currentItemMarker;
+                return self;
+            },
+
+
+            /**
+               Returns true if the list of items is as long as or longer
+               than the view's height.
+             */
+            needsScrollbar: proc(){
+                affirm typeinfo(isarray this.items);
+                return this.items.length() >= this.pageHeight
+            },
+
+            /**
+               "Renders" one list item. item must be a:
+
+               - string: rendered as-is
+
+               - container: it first looks for a member named 'label'
+               (which it coerces to a string, if needed), a method named
+               toString(), else it does something which is unlikely to be
+               useful.
+
+               - else it does something which is unlikely to be
+               useful.
+
+               If maxLen is specified, the returned string is trimmed (in
+               the middle) to that length. The default max length is
+               (this.view - this.xoff - this.needsScrollbar()).
+             */
+            itemToString: proc(item, maxLen){
+                var rc;
+                if(typeinfo(isstring item)){
+                    rc = item;
+                }
+                else if(typeinfo(iscontainer item)){
+                    if(undefined !== item.label){
+                        rc = ''+item.label;
+                    }else if(typeinfo(isfunction item.toString)){
+                        rc = item.toString();
+                    }else{
+                        rc = '%1$p'.applyFormat(item);
+                    }
+                }else{
+                    rc = '%1$p'.applyFormat(item);
+                }
+                typeinfo(isstring rc) || (rc = ''+(rc?:''));
+                // Was nicht passt wird passend gemacht...
+                const maxW = (maxLen ?: this.vw - this.xoff - this.needsScrollbar());
+                if((const n = rc.length()) > maxW ){
+                    rc = rc.substr(0,maxW/2)+"…"+rc.substr(n+1-maxW/2-(maxW%2));
+                }
+                return rc;
+            },
+
+            /**
+               Renders a scrollbar on the right-hand side of this.view if
+               this.needsScrollbar(). Returns this object.
+            */
+            renderScrollbar: proc(){
+                affirm typeinfo(isarray this.items);
+                (const n = this.items.length()) < this.pageHeight && return this;
+                this.view.drawScrollbarV(this.xoff + this.vw - 1 /* right edge */, this.yoff,
+                                         this.pageHeight, n, this.line);
+                //this.view.drawScrollbarH(this.xoff, this.yoff, this.vw, n, this.line);
+                return this;
+            },
+
+            renderScrollbar_OLD: proc(){
+                affirm typeinfo(isarray this.items);
+                const n = this.items.length();
+                n < this.pageHeight && return this;
+                const x = this.xoff + this.vw - 1 /* right edge */,
+                top = this.yoff,
+                bottom = this.yoff + this.vh - 1,
+                ph = this.pageHeight,
+                pos = top + (this.line.toDouble()/n * ph).toInt() + 1
+                /* place current-location marker under the top border
+                   marker */;
+                for( var v=this.view, y = top; y < bottom; ++y ){
+                    v.changeCell(x, y, '░');
+                }
+                this.view//.vLine( x, top, bottom )
+                    .changeCell( x, top, '△')//'▲')//▣' ) 
+                    .changeCell( x, pos>=bottom ? bottom-1 : pos, '▩')//'▮')//'▷')
+                    .changeCell( x, bottom, '▽')//'▼')//'▣' )
+                ;
+                return this;
+            },
+
+            /**
+               Renders this.items to this.view. Returns this object.
+            */
+            renderList: proc(){
+                affirm typeinfo(isarray this.items);
+                const nItems = this.items.length();
+                const doScrollbar = nItems >= this.pageHeight;
+                const selWidth = this.opt.multiSelect ? this.opt.currentItemMarker.length() : 0;
+                const notCurrentMarker = selWidth
+                ? ("%1$."+selWidth+"c").applyFormat(" ")
+                : '';
+                const lineFormat = "%1$s%2$-"+(this.vw-selWidth-doScrollbar)
+                    +"."+(this.vw-selWidth-doScrollbar)+"s";
+                const nRows = this.pageHeight>=nItems ? nItems : this.pageHeight;
+                const pageNum = this.line / this.pageHeight;
+                const selRowOffset = this.line % this.pageHeight;
+                const topLineNdx = this.pageHeight*pageNum;
+                // todo: improve this to scroll a line at a time after reaching the top/bottom,
+                // of a page, instead of a full page at at time.
+                const lblWidth = this.vw - doScrollbar - selWidth;
+                for( var attr, lbl, r = 0, itemNdx = topLineNdx; r < nRows; ++r, ++itemNdx ){
+                    const item = this.items[itemNdx] ?: {label:''}
+                    /* trailing empty slots in view: we need to clear those lines */;
+                    affirm typeinfo(iscontainer item) /* requirement for the time being */;
+                    lbl = this.itemToString(item, lblWidth);
+                    affirm typeinfo(isstring lbl);
+                    if(this.opt.multiSelect){
+                        lbl = lineFormat.applyFormat((r===selRowOffset)
+                                                     ? this.opt.currentItemMarker
+                                                     : notCurrentMarker,
+                                                     lbl);
+                        attr = this.tattr[item.selected
+                                          ? 'selected' : 'normal'];
+                    }else{
+                        lbl = lineFormat.applyFormat("", lbl);
+                        attr = this.tattr[(r===selRowOffset)
+                                              ? 'selected' : 'normal'];
+                    }
+                    this.view.print5(0+this.xoff,r+this.yoff,
+                                     attr.fg, attr.bg, lbl);
+                }
+                return doScrollbar ? this.renderScrollbar() : this;
+            },
+
+            /**
+               Updates the display based on the current this.opt and
+               this.items state.
+            */
+            present:proc(){
+                (this.renderList().opt.windowToPresent ?: this.view).present();
+                //this.tb.present() /* the nuclear option */;
+                return this;
+            },
+
+            /**
+               Adjusts the current line by +rows, accounting for edges and
+               wraparound (if enabled), then updates the display.
+            */
+            bump: proc(rows){
+                if(typeinfo(isinteger rows)){
+                    affirm typeinfo(isarray this.items);
+                    const n = this.items.length();
+                    this.line =
+                        ((this.line += rows) >= n )
+                        ? (this.opt.wrapAround ? 0 : n-1)
+                        : ((this.line < 0)
+                           ? (this.opt.wrapAround ? n-1 : 0)
+                           : this.line);
+                }
+                //this.view.print3(1,0,'@',this.xoff,',',this.yoff,'    ');
+                return this.present();
+            },
+
+            scrollTo: proc(row){
+                return this.bump(0);
+            },
+
+            selectAll: proc(select=true){
+                affirm typeinfo(isarray this.items);
+                foreach(@this.items=>v){
+                    select ? v.selected = true : unset v.selected;
+                };
+                self.bump();
+            },
+
+            getSelected: proc(){
+                const rc = [];
+                foreach(@this.items => v){
+                    v && v.selected && (this.opt.multiSelect
+                        ? rc[] = v : return v);
+                }
+                return rc;
+            },
+
+            getCurrentItem: proc(){
+                return this.items[this.line]
+            }
+
+        }.withThis(proc(){
+            const toggleCurrent = proc(self,bumpCount=0){
+                const item = self.items[self.line];
+                var msg;
+                self.view.clearLine(0);
+                if(self.opt.multiSelect){
+                    item.selected = !item.selected;
+                    self.opt.debug && (self.opt.windowToPresent|||self.view)
+                        .clear().print3(0,0,
+                                (item.selected ? "Selected" : "Unselected"),
+                                " item: "+self.itemToString(item));
+                }else{
+                    (self._selectedItem) && (unset self._selectedItem.selected);
+                    item.selected = true;
+                    self._selectedItem = item;
+                    self.opt.debug && (self.opt.windowToPresent|||self.view)
+                        .clear().print3(0,0, "Selected item: "+self.itemToString(item));
+                }
+                //self.view.present();
+                self.bump(bumpCount);
+            };
+            this.keyMap = {
+#// placement is an emacs indentation kludge
+                prototype: null, // avoid looking up anything other than hash keys
+                'ARROW_UP': proc(self,e){
+                    self.bump(-1);
+                },
+                'ARROW_DOWN': proc(self,e){
+                    self.bump(1);
+                },
+                'HOME': proc(self){
+                    self.line = 0;
+                    self.bump();
+                },
+                'END': proc(self){
+                    self.line = self.items.length()-1;
+                    self.bump(0);
+                },
+                'ENTER': toggleCurrent,
+                'INSERT': proc(self){
+                    s(argv.0, self.opt.multiSelect ? 1 : 0);
+                } using ({s:toggleCurrent}),
+                /*'+':proc(self){
+                    s(argv.0, self.opt.multiSelect ? 1 : 0);
+                    // todo: only toggle to selected, not unselected
+                } using ({s:toggleCurrent}),*/
+                'PGUP': proc(self){
+                    self.bump(-self.pageHeight);
+                },
+                'PGDN': proc(self){
+                    self.bump(self.pageHeight);
+                },
+                '^A':proc(self){
+                    if(self.opt.multiSelect){
+                        self.selectAll();
+                    }
+                },
+                '^X': proc(){
+                    return false;
+                },
+
+                // Mappings for ALT-xxx and ESC-xxx (treated the same by termbox)...
+                'mod': {#
+                    't': proc(self){
+                        self.opt.multiSelect = !self.opt.multiSelect;
+                        self.selectAll( 0 );
+                    },
+                    'w': proc(self){
+                        self.opt.wrapAround = !self.opt.wrapAround;
+                        self.present();
+                    },
+                    'PGUP': proc(self){
+                        self.bump(-(self.pageHeight/3));
+                    },
+                    'PGDN': proc(self){
+                        self.bump(self.pageHeight/3);
+                    }
+
+                }
+            };
+        });
+
+        var w = new tb.Window(31/*tb.width()/2*/, tb.height());
+        w.defaultAttr(tb.color.white | tb.attr.bold, tb.color.red)
+            .clear()
+            .print3(1,w.height()-1,'view: ',w.width(),"x",w.height(),' incl. border')
+            ;
+        var subwin;
+        if(1){
+            // optionally set up a subwindow as the list rendering target
+            subwin = w.newSubwin();
+            subwin.defaultAttr(tb.color.yellow | tb.attr.bold, tb.color.cyan).clear();
+            assert subwin.width() === w.width()-2;
+            assert subwin.height() === w.height()-2;
+        }
+        var lv = new ListView(@(
+            subwin
+                ? [subwin]//,1,1, 15, 10]
+                : [w,1,2,w.width()-2, w.height()-3]
+        ));
+        lv.opt.multiSelect = 0;
+        lv.opt.wrapAround = 0;
+        lv.opt.windowToPresent = subwin ? w : undefined;
+        lv.opt.debug = 1;
+        if(subwin){
+            // fix some ugly colors...
+            lv.tattr.reversed = {
+                fg: tb.color.white | tb.attr.bold,
+                bg: tb.color.blue | tb.attr.bold
+            };
+            lv.tattr.selected = {
+                fg: lv.tattr.reversed.fg | tb.attr.underline,
+                bg: lv.tattr.reversed.bg
+            };
+        }
+        var longItemLength = lv.opt.multiSelect
+            ? lv.vw-lv.opt.currentItemMarker.length()
+            : lv.vw;
+        lv.items.push( {label:"One"}, {label:"Two"}, {label:"Three"},
+                       {label:("%1$"+(longItemLength-1)+"."+(longItemLength-1)+"cX").applyFormat("0")},
+                       {label: "A label longer than the width of the view."},
+                       {label:"Ctrl-X quits"});
+        // Add more items than the view is tall, to force scrolling...
+        1 && for( var i = 0; i < lv.vh; ++i ) lv.items[] = {label:"Extra item #"+i};
+        //w.present();
+        lv.present().eventLoop();
+        //tb.poll();
+        //throw lv.items;
+    })
+};
+tb.shutdown(); // not needed if the windows DTRT, but needed if an exception is thrown in certain places.
+ex  ? throw ex : unset ex;
+print("Done!");
+0 && eval {
+    print("Termbox key mappings:");
+    foreach(#tb.keys => k, v){
+        //if(typeinfo(isstring k)){
+        print('\t',k,'=',v);
+        //}
+    };
+}

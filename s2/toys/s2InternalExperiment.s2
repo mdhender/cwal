@@ -1,0 +1,22 @@
+var a = [1,2,3], o = {a};
+o.a[] = o;
+o.a[] = a;
+o[o] = o;
+o[a] = a;
+s2.dumpVal(a);
+scope {
+    s2.o = o /* upscopes o and a to top scope */;
+    o = a = null;
+    //s2.dumpVal(s2.o);
+    for( var i = 0; i < 20; ++i ){};//print(__FLC, i)}
+    //s2.s2InternalExperiment();
+    s2.s2InternalExperiment();
+    print(__FLC, 'nulling...');
+    s2.o = null;
+    print(__FLC, 'nulled');
+    s2.s2InternalExperiment();
+    print(__FLC,"scope closing");
+};
+print(__FLC,"scope closed");
+//s2.s2InternalExperiment();
+print(__FLC,"done");

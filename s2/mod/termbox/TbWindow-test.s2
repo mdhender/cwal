@@ -1,0 +1,123 @@
+const tb = s2.import('tb-bootstrap.s2');
+affirm tb.requireS2;
+const ex = catch
+tb.requireS2(['termbox/module', 'TbWindow'],
+proc(tb,TW){
+
+    //TW.present.useBuffer = false;
+
+    const tbW = tb.width(true/*init tb*/), tbH = tb.height();
+
+    const wToStr = proc(w){
+        const g = w.geometry();
+        return "%1$p %2$dx%3$d @ %4$d,%5$d,%6$d".
+            applyFormat(w, g.w, g.h, g.x, g.y, g.z);
+    };
+    
+    const w = new TW(tbW/2, tbH/3,
+                     2, 4);//tbW/2, tbH/2);
+    affirm typeinfo(isfunction w.boxIn);
+    w
+        .attr(tb.color.white | tb.attr.bold,
+                     tb.color.blue)
+        .clear()
+        .print3( 1, 6, wToStr(w))
+        .fillRect(1, 7, w.width()-2, 2, '*', tb.color.white,
+                  tb.color.red)
+    ;
+
+    var listenID = w.listen(TW.Events.blit, proc(){
+        affirm !this.notListening;
+        affirm this inherits TW;
+        const w = this.width(), h = this.height();
+        ++this.presentCount;
+        this
+            .boxIn(2, 1/*, tb.color.white | tb.attr.bold,
+                     tb.color.blue*/)
+            .cell(0,0,''+this.presentCount,
+                  tb.color.white | tb.attr.bold,
+                  tb.color.black)
+            .scrollBarV(w-1, 0, h-1, 100, 15)
+            .scrollBarH(0, h-1, w-1, 100, 75)
+            .reverseAttr()
+            .print3( 2, 0, wToStr(this))
+            .reverseAttr()
+        ;
+    } using (wToStr));
+
+    w.present();
+    tb.poll();
+
+    var sub = new TW(w){
+        affirm this.parent === w;
+        affirm w.children.indexOf(this)===0;
+    };
+
+    sub.attr(tb.color.yellow | tb.attr.bold,
+                    tb.color.cyan)
+        .clear()
+        .print3(0,0, wToStr(sub) )
+        .lineH(0, 1, sub.width())
+    ;
+
+    var sub2 = new TW(w, 16, 3, w.width()/2-8, 3, 1);
+    sub2.attr(tb.color.yellow | tb.attr.bold,
+              tb.color.black)
+        .clear()
+        .print3(0,0, wToStr(sub2))
+    ;
+
+    w.present();
+    tb.poll();
+
+    sub.show(false);
+    w.print3(1,1,"hid sub").present();
+    tb.poll();
+
+    sub.show(true);
+    sub2.show(true).zLevel(-1);
+    sub.print3(0,2,"moved sub, lowered sub2");
+    sub.moveBy(4,3);
+    w
+        .moveBy(tbW/4, tbH/4)
+        .present();
+    tb.poll();
+
+    sub.close();
+    unset sub;
+    w
+        .print3(1,1, "close()'d sub.")
+        .present();
+    tb.poll();
+    
+    sub2.moveBy(+2,-2).clear().print3(0,0,wToStr(sub2));//.blit();
+    sub2.present();
+    //w.present();
+    tb.poll();
+    //sub2.close(); unset sub2;
+    w
+    //    .print3(1,2, "close()'d sub2.")
+    //    .present()
+    ;
+    //tb.poll();
+
+    if(1){
+        affirm TW.Events.blit === listenID.value;
+        w.unlisten(listenID);
+        w.notListening = true;
+    }
+    unset listenID;
+    w
+        .print3(1,2, "clear\n???\n")/* \n clears to EOL and will wipe out
+                                   part of a scrollbar unless the scrollbar
+                                   gets updated via an event listener. */
+        .present();
+    tb.poll();
+    w.reverseAttr(undefined,true).present();
+    tb.poll();
+    w.reverseAttr(undefined,true).present();
+    tb.poll();
+});
+
+tb.width()>=0 && tb.shutdown();
+ex && throw ex;

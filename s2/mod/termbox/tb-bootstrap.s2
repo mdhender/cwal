@@ -1,0 +1,8 @@
+//affirm typeinfo(isfunction s2.loadModule2);
+//affirm typeinfo(isfunction s2.import2);
+const R = s2.require ||| s2.import('../../require.d/require.s2'),
+      tb = R(['termbox/module']).0;
+tb.requireS2 = R;
+//return s2.termbox ||| s2.loadModule('termbox.so');
+return tb;
+

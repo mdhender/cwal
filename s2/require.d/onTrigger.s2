@@ -1,0 +1,86 @@
+/**
+   An experimental event manager which superficially resembles
+   jQuery.on() and jQuery.trigger().
+*/
+const $ = enum{$}.$;
+const proxy = {
+    prototype: null,
+
+    __typename: "OnTrigger",
+
+    __new: proc(obj) using($){
+        this[$] = obj;
+        obj[$] ||| (obj[$]={});
+    },
+    /**
+       Expects an event key and callback function, and queues that
+       callback to be called when trigger() is passed the same key.
+    */
+    on: proc(k,f) using($){
+        affirm typeinfo(iscallable f);
+        const on = this[$][$];
+        (on[k] ||| (on[k] = []))[] = f;
+        //return this;
+    },
+    /**
+       Triggers all callbacks for the given key, in an unspecified
+       order, passing them an event object and any arguments (after
+       the first) passed to this function. The event object is a plain
+       Object with this structure: {target: theBoundObject, type: k}.
+    */
+    trigger: proc(k) using($){
+        argv.shift();
+        const o = this[$];
+        foreach(@(o[$][k] ||| break)=>f){
+            f({target: o, type: k, prototype:null}, @argv);
+        }
+        //return this;
+    },
+    /**
+       If passed an argument, removes all handlers for that event key,
+       else it removes all handlers for all keys.
+     */
+    clear: proc(k) using($){
+        if(argv.#) delete this[$][$][k];
+        else this[$][$] = {};
+    }
+};
+
+/**
+   Binds event-handling data to a "secret" property of obj and returns
+   a proxy object with on() and trigger() methods for
+   mapping/triggering those events.
+
+   If called multiple times with the same object, it will re-use the
+   stashed event-mapping information, thus the caller does not need to
+   keep a reference to the proxy.
+
+   The "secret" property has a property key of thisFunction.secretKey.
+   It is of the Unique data type, and will thus be skipped over by
+   JSON-related APIs but will be iterated over with foreach(), so the
+   client must be prepared to handle (skip over) that property during
+   iteration.
+*/
+const mod = proc(obj) using{P:proxy}{
+    affirm typeinfo(iscontainer obj);
+    return new P(obj);
+};
+mod.secretKey = $;
+
+return mod;
+
+// Example usage:
+var my = {x: 0};
+mod(my).on('hi', proc(){
+    print(__FLC,'on(hi) handler',argv);
+    ++argv.0.target.x;
+});
+assert typeinfo(isobject my[mod.secretKey]);
+assert typeinfo(isarray my[mod.secretKey].hi);
+mod(my).trigger('hi', 'there');
+affirm 1 === my.x;
+mod(my).trigger('nope', 1);
+affirm 1 === my.x;
+mod(my).trigger('hi', 'bye');
+affirm 2 === my.x;
+print(__FLC, 'done');

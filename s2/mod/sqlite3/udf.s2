@@ -1,0 +1,115 @@
+const SQ3 = s2.import('bootstrap.s2');
+print(__FLC,"SQ3 =",SQ3);
+scope {
+    const db = new SQ3(":memory:"/* , 'T' === sql tracing*/);
+    print(__FLC,"db =",db);
+    db.execMulti(<<<_SQL
+                 create table t(a,b,c);
+                 insert into t(a,b,c) values(1,2,3),(4,5,6);
+                 _SQL);
+
+    db.createUDF('print',print)
+        .exec("select print('hi',3-1,'you.');")
+        .createUDF('yo', proc(a,b){
+            // throw 'hi';
+            /* ^^^ We actually cannot propagate these through the SQL
+               back into s2, or else an SQL callback could use
+               assert() or exit() or similar to exit the interpreter,
+               which would arguably be very bad.
+
+               As of 20170322, exceptions/assert/exit/etc. are
+               propagated out of UDFs.
+            */
+            return 2===argv.length() ? a + b : null;
+        })
+        .exec("select print('yo(3,4) =',yo(3,4))");
+    assert null === db.selectValue("select yo()");
+    var myVar = 0;
+    db.createUDF('hi', proc(v){
+        affirm typeinfo(islocal $udfFinal);
+        print(__FLC,'v =',v);
+        return myVar += v;
+    });
+
+    db.exec("select hi(a) from t");
+    assert 5 === myVar;
+    unset myVar;
+
+    assert 'CWAL_RC_MISUSE' === catch {db.createUDF('', proc(){})}.codeString();
+
+    /* To create an aggregate function, pass a truthy 2nd argument and
+       the function as the 3rd.  Aggregates are called like normal
+       functions, plus one more time (with an extra flag set) after
+       sqlite is done aggregating. The final call should return the
+       final result. The result value of the calls up to that point
+       are ignored. In the last call, the function being called will
+       have a scope-local variable called $udfFinal set to true. That
+       property is false for all non-final calls.
+    */
+    db.createUDF('summer', true, proc agg(){
+        affirm typeinfo(islocal $udfFinal);
+        if($udfFinal){
+            print(__FLC,"Final Aggregate call:",argv);
+            const rc = agg.accum;
+            agg.accum = 0;
+            return rc;
+        }
+        print(__FLC,"Aggregate call:",argv);
+        foreach(@argv=>v) agg.accum += v;
+    }.withThis(proc(){
+        this.accum = 0 /* init our data aggregation collector */;
+        this.deterministic = false
+        /* tells createUDF() not to mark this function as SQLITE_DETERMINISTIC */;
+    }));
+    assert 12 === db.selectValue("select summer(a,b) from t");
+
+    var i = 0;
+    // for() starts a scope and will finalize stmt...
+    for( var stmt = db
+         .prepare("select a from t where a>?")
+         .bind([1]);
+         stmt.step(); ){
+        i=stmt.get(0);
+    };
+    assert 4===i;
+    unset i;
+
+    db.createUDF('boo', {
+        step: proc(){
+            affirm typeinfo(islocal $udfFinal);
+            print(__FLC,argv);
+        }
+    }).exec("select boo(a,b) from t");
+
+    db.createUDF('boo2', {
+        aggregate: true,
+        step: proc(){
+            affirm typeinfo(islocal $udfFinal);
+            print(__FLC,'aggregate - final step?', $udfFinal, argv);
+            //$udfFinal && throw "testing throw from 'final' UDF.";
+        }
+    }).exec("select boo2(a,b) from t");
+
+    var e = catch db.createUDF('boo3', {
+        deterministic: false,
+        //aggregate: false,
+        step: proc(){
+            print(__FLC, argv, "About to throw...");
+            //assert 0 && "testing assert from udf";
+            //exit "exit via udf";
+            //fatal "fatal via udf";
+            //affirm 0 && "testing affirm from udf";
+            throw "testing throw from udf";
+        }
+    }).exec("select boo3(a,b) from t");
+    affirm typeinfo(isexception e);
+    print(__FLC,"Caught an exception from UDF:",e);
+    e = catch db.exec("select nosuchfunc()");
+    affirm typeinfo(isexception e);
+    print(__FLC,"Caught an exception from exec():",e);
+    e = catch db.prepare("select nosuchfunc()");
+    affirm typeinfo(isexception e);
+    print(__FLC,"Caught an exception from prepare():",e);
+}
+
+print(__FLC,"Done.");

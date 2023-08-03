@@ -1,0 +1,32 @@
+decl x 1
+assert 1 == $x
+incr x; assert 2 == $x
+incr x 4; assert 6 == $x
+incr x -2; assert 4 == $x
+decr x; assert 3 == $x
+decr x 2; assert 1 == $x
+decr x -2; assert 3 == $x
+set x 5
+assert 7 == [incr x 2]
+assert [info is-local x]
+unset x
+assert ![info is-local x]
+
+decl o object {a 1 b 2}
+assert 2 == [incr $o[a]]
+assert 0 == [decr $o[a] 2]
+assert undefined == $o[c]
+assert 1 == [incr $o[c]]
+assert [info is-local o]
+unset o
+assert ![info is-local o]
+
+decl a array (0 1 2)
+assert 2 == [incr $a[1]]
+assert 0 == [decr $a[2] 2]
+assert undefined == $a[4]
+assert 1 == [incr $a[4]]
+assert 0 == $a[0]
+assert [info is-local a]
+unset a
+assert ![info is-local a]

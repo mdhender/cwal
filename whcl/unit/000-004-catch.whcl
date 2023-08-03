@@ -1,0 +1,49 @@
+########################################################################
+# Tests
+proc test-exception {x} {
+    assert [info is-exception $x]
+    assert [info is-integer $x[code]]
+    assert [info is-integer $x[line]]
+    assert [info is-integer $x[column]]
+    assert ! !$x[message]
+    assert [info is-string $x[script]]
+    assert [info is-array $x[stackTrace]]
+}
+
+decl e [catch {affirm 1}]
+assert undefined == $e
+set e [catch { throw 1 }]
+test-exception $e
+assert 1 == $e[message]
+assert 'CWAL_RC_EXCEPTION' == [e code-string]
+unset e
+
+decl e exception RANGE "message"
+test-exception $e
+assert 'CWAL_RC_RANGE' == [e code-string]
+unset e
+
+catch e {
+    throw "hi"
+}
+test-exception $e
+assert $e[message] == "hi"
+assert 'CWAL_RC_EXCEPTION' == [e code-string]
+unset e
+
+decl e catch {
+    throw exception 2 "hi"
+}
+test-exception $e
+assert 2 == $e[code]
+assert 'hi' == $e[message]
+unset e
+
+decl o object
+catch $o[x] {
+    throw 2
+}
+assert 2 == $o[x][message]
+test-exception $o[x]
+catch $o[y] {affirm true}
+assert undefined == $o[y]

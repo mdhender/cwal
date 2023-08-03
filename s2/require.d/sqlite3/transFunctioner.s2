@@ -1,0 +1,91 @@
+/**
+    This function must be passed a function which, when called,
+    returns an sqlite3 db handle (it may perform arbitrary
+    initialization of the db during that call). See the
+    sqlite3/dbGetter require.s2 module for a compatible option.
+   
+    This method returns an object with two methods for transforming
+    functions and methods into transaction-wrapped variants of
+    themselves.
+
+    The methods in the returned object may be moved/copied to another
+    object, but note that they will always use the db handle provided
+    by the argument passed to this initialization function.
+
+    Example usage:
+
+      s2.require(['sqlite3/dbGetter',
+               'sqlite3/transFunctioner'], proc(G,T) using(mylib){
+        mylib.db = G(mylib.dbConfig); // create a db accessor function
+        mylib.trans = T(mylib.db); // create transaction wrappers
+      });
+
+    That installs mylib.db() to return a db handle (opening it the
+    first time the method is called) and injects the transFunction()
+    and transMethod() methods into mylib. It can then be used like:
+
+      const f = mylib.trans.transFunction(somefunc);
+      // f === a transactional wrapper for somefunc
+      mylib.trans.transMethod( someobj, 'foo' );
+      // replaces sombobj.foo() with transactional someobj.foo() wrapper
+
+    Note that the transactional wrappers will always use the db getter
+    which was passed to T() in the require() snippet - they bind to
+    that getter function when they're created, but they don't call the
+    function until they need to. Thus it's possible to create
+    transactional wrappers before the db is ever opened.
+
+*/
+return proc /*initTransFunctionGenerator*/(dbGetterFunc){
+    affirm typeinfo(isfunction dbGetterFunc);
+
+    /**
+       Returns a new function which wraps a function f in a call to
+       dbGetterFunc().transaction(...). All arguments passed to the
+       replacement function are passed on to the original function,
+       and its "this" is applied to the wrapped function. The
+       replacement function returns the same thing as f.
+
+       Note that transFunction() does not require a specific
+       "this" - it may be called without one.
+
+       This requires an uncomfortable amount of indirection.
+    */
+    const transFunction = proc(f){
+        affirm typeinfo(isfunction f);
+        return proc() using{f,F,d} {
+            var r, t=this, a=argv;
+            d().transaction(F);
+            return r;
+        };
+    } using{
+        d:dbGetterFunc,
+        F:proc(){r=f.apply(t, a)}
+    };
+
+    /**
+       Replaces the method named methodName in klass (a container)
+       with a wrapper function which embeds the call in a
+       dbGetterFunc().transaction() call. All arguments passed
+       to the replacement function are passed on to the original
+       method, and its "this" is applied to the inititially
+       intended "this". The replacement method returns the same
+       thing as the replaced function would.
+           
+       klass must be a container and methodName must be the name of a
+       function-type property in klass. i.e. typeinfo(isfunction
+       klass[methodName]) must be true or this function will throw.
+
+       Returns this object.
+    */
+    const transMethod = proc(klass,methodName){
+        affirm typeinfo(iscontainer klass);
+        affirm typeinfo(isstring methodName);
+        const f = klass[methodName];
+        affirm typeinfo(isfunction f);
+        klass[methodName] = T(f);
+        return this;
+    } using {T: transFunction};
+
+    return {transFunction, transMethod};
+}

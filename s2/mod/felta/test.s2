@@ -1,0 +1,56 @@
+const F = s2.felta ||| s2.loadModule('felta.so');
+assert typeinfo(isfunction F.appliedLength);
+assert typeinfo(isfunction F.apply);
+assert typeinfo(isfunction F.create);
+
+const B = s2.Buffer;
+const b1 = B.readFile(__FILE),
+      b2 = new B() << b1;
+affirm b1.compare(b2) === 0;
+b2.fill(42, 1, 29);
+b2.fill('!', b1.length()-20, 18);
+affirm b1.compare(b2) !== 0;
+var d = F.create( b1, b2 );
+affirm typeinfo(isbuffer d);
+affirm d.length() < b1.length();
+if(0){
+    s2.io.output
+        << "Delta: " << d.length() << " bytes. Applied len="
+        << F.appliedLength(d) << " Raw data:\n" << d << "\n";
+}
+affirm F.appliedLength(d) > 0;
+affirm catch F.appliedLength('');
+affirm !F.appliedLength('', false);
+affirm F.isDelta(d);
+affirm !F.isDelta(b1);
+affirm !F.isDelta(b2);
+affirm !F.isDelta(3);
+affirm catch F.isDelta();
+//print(__FLC, d.capacity(), d.length());
+affirm d.capacity() < d.length()*2;
+var b3 = F.apply(b1, d);
+affirm typeinfo(isbuffer b3);
+affirm b3.compare(b1) !== 0;
+affirm b3.compare(b2) === 0;
+
+
+
+// Try again, reversing the source/delta arguments
+// (which apply() can account for):
+b3 = F.apply(d, b1);
+affirm typeinfo(isbuffer b3);
+affirm b3.compare(b2) === 0;
+unset b3;
+
+d.fill(42,1,2);
+affirm catch F.apply(b1, d) /* delta is corrupt, so doesn't look like a delta */;
+
+0 && scope {
+    const v1 = s2.Buffer.readFile('1.v1'), v2 = s2.Buffer.readFile('1.v2'),
+          d = F.create(v1, v2);
+    //s2out << "delta = "<<d<<'\n';
+    const vX = F.apply(v1, d);
+    affirm v2 === vX;
+};
+
+print("Done.");

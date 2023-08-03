@@ -1,0 +1,57 @@
+#!/usr/bin/perl
+########################################################################
+# A quick hack to create C 'case' code for UTF-8 case folding.
+#
+# Intended to be piped the UnicodeData.txt file:
+#
+#   ftp://ftp.unicode.org/Public/UCD/latest/ucd/UnicodeData.txt
+#
+# That file's format is described here:
+#
+#   ftp://unicode.org/Public/3.0-Update/UnicodeData-3.0.0.html
+#
+# Run this twice (once with -u (toupper) and once without), piping
+# it UnicodeData.txt each time.
+#
+# Running with -u will generate the toupper "case" parts of a C switch
+# statement. Running without -u will generate the tolower "case"
+# parts. ("case" as in switch/case, not "case" folding.)
+#
+# If my patience for perl was greater you'd only need to run this once
+# and it would generate 2 output files.
+#
+# Stitch the output into your C code and let emacs indent it.
+#
+# Have i mentioned how much i dislike perl?
+########################################################################
+use strict;
+use warnings;
+# Set $toUp to truthy to process lower-case chars (toupper op).
+# Default is the opposite (tolower).
+my $toUp;
+BEGIN {
+    $toUp = defined $ARGV[0] ? (($ARGV[0] eq '-u') ? 1 : 0) : 0;
+    print "int ";
+    if($toUp){ print "my_toupper"; }
+    else{ print"my_tolower"; }
+    print "( int ch ){\n";
+    print "  switch(ch){\n";
+}
+while(my $line = <STDIN>){
+    chomp $line;
+    my @f = split /;/, $line;
+    my $ch = $f[0];
+    my $fold;
+    if($toUp){
+        $fold = $f[12];
+    }else{
+        $fold = $f[13];
+    }
+    next unless $fold;
+    print "    case 0x", $ch, ": return 0x", $fold, ";\n";
+}
+END{
+    print "    default: return ch;\n";
+    print "  }\n";
+    print "}\n";
+}

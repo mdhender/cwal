@@ -1,0 +1,33 @@
+The files regex.[ch], utf.[ch], and utftype.c were taken from the MuJS
+project (https://github.com/ccxvii/mujs) on 2018-11-24. They have been
+modified from their original form only to eliminate a couple minor
+compiler warnings (extra commas in enum declarations and one unused
+function parameter).
+
+What follows is the MuJS license. Though it does not explicitly say
+so, it is the ISC license (https://opensource.org/licenses/ISC), which
+is functionally equivalent to the MIT and simplified BSD licenses.
+
+========================================================================
+MuJS: an embeddable Javascript interpreter in C.
+
+ABOUT
+
+MuJS is a lightweight Javascript interpreter designed for embedding in
+other software to extend them with scripting capabilities.
+
+LICENSE
+
+MuJS is Copyright 2013-2017 Artifex Software, Inc.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+The software is provided "as is" and the author disclaims all warranties with
+regard to this software including all implied warranties of merchantability
+and fitness. In no event shall the author be liable for any special, direct,
+indirect, or consequential damages or any damages whatsoever resulting from
+loss of use, data or profits, whether in an action of contract, negligence
+or other tortious action, arising out of or in connection with the use or
+performance of this software.

@@ -1,0 +1,25 @@
+var Net = s2.loadModule('./mod_net.so', {});
+Net.Start(8080);
+while (var req = Net.Open()) {
+	if (req === true) continue;
+	req = Net.Read(req);
+
+	var res = '';
+	if (req.post.length() > 1) {
+		res = s2.json.parse(req.post);
+		res.s2ParsedAndAdded = '... this key to your JSON POST! <3';
+		res = s2.json.stringify(res);
+	}
+
+	var resHeaders = [
+		'HTTP/1.1 200 OK',
+		'Content-Type: application/json',
+		'Content-Length: ' + res.length(),
+		'Connection: close'
+	];
+
+	Net.Close(req.id, resHeaders.join('\r\n') + '\r\n\r\n' + res);
+
+	if (req.headers.substr(0, 9) == 'GET /stop') break;
+}
+Net.Stop();

@@ -1,0 +1,318 @@
+#!/hey/emacs/this/is/make
+#
+# This is the main makefile for whcl/. It is intended to be included
+# from/via the main GNUmakefile.
+whcl:
+ifneq (1,$(MAKING_CLEAN))
+all: whcl
+endif
+$(call ShakeNMake.CALL.CLEAN-SET,whcl)
+$(call ShakeNMake.CALL.CLEAN-SET,whcl-mod)
+clean-whcl: clean-whcl-mod
+distclean-whcl: distclean-whcl-mod
+clean-root: clean-whcl
+distclean-root: distclean-whcl
+DIR.whcl = $(DIR.top)/whcl
+
+WHCL_HAVE_DLOPEN ?= @HAVE_LIBDL@
+WHCL_HAVE_LTDL ?= @HAVE_LIBLTDL@
+WHCL_LDFLAGS_DLL_OPENER := @LDFLAGS_MODULE_LOADER@
+WHCL_LDFLAGS_CLOCK_GETTIME ?= @lib_clock_gettime@
+WHCL_ENABLE_CXX ?= @ENABLE_CXX@
+WHCLSH_STATIC ?= @WHCLSH_STATIC@
+
+########################################################################
+# WHCL_ENABLE_LOADABLE_MODULES and friends...
+ifeq (0,$(WHCLSH_STATIC))
+# If we're in building whclsh statically, leave loadable modules
+# disabled, as we cannot load them when linked statically.
+ifeq (1,$(WHCL_HAVE_DLOPEN))
+  WHCL_DLL_OPENER := dl
+  WHCL_ENABLE_LOADABLE_MODULES := 1
+  WHCL_HAVE_LTDL := 0
+else ifeq (1,$(WHCL_HAVE_LTDL))
+  WHCL_DLL_OPENER := ltdl
+  WHCL_ENABLE_LOADABLE_MODULES := 1
+  WHCL_HAVE_DLOPEN := 0
+else 
+  WHCL_DLL_OPENER := 0
+  WHCL_ENABLE_LOADABLE_MODULES := 0
+  WHCL_LDFLAGS_DLL_OPENER :=
+  # /WHCL_HAVE_LTDL
+endif
+# /WHCL_HAVE_DLOPEN
+endif
+# /WHCLSH_STATIC
+########################################################################
+
+libwhcl.EXTLIBS := \
+		$(WHCL_LDFLAGS_DLL_OPENER) \
+		$(WHCL_LDFLAGS_CLOCK_GETTIME) \
+		-lm
+WHCL_CLIENT_LDFLAGS := -L$(DIR.top) -lcwal $(libwhcl.EXTLIBS)
+
+# TODO: $(WHCL_LDFLAGS_COMPRESSION) $(WHCL_LDFLAGS_ZLIB)
+
+########################################################################
+# Test binaries...
+whcl_src := $(addprefix $(DIR.whcl)/, \
+  expr.c foreach.c fs.c \
+  kwhash.c math.c mod.c \
+  ob.c ops.c os.c pragma.c \
+  sfunc.c \
+  src_require.c \
+  strftime.c \
+  script.c tok1.c \
+  t_array.c t_exception.c t_func.c \
+  t_number.c t_obj.c t_pf.c t_string.c \
+  time.c tmpl.c \
+  util.c whcl.c \
+)
+whcl_obj := $(subst .c,.o,$(whcl_src))
+
+$(DIR.whcl)/kwhasher.BIN.OBJECTS := $(DIR.whcl)/kwhasher.o $(DIR.whcl)/kwhash.o
+$(call ShakeNMake.CALL.RULES.BINS,$(DIR.whcl)/kwhasher)
+BIN.KWHASHER := $($(DIR.whcl)/kwhasher.BIN)
+
+.PHONY: whcl-hashes
+whcl-hashes: $(BIN.KWHASHER)
+	cd $(DIR.whcl) && bash createHashes.sh
+
+########################################################################
+# DLL...
+ifeq (1,0)
+ifeq (1,$(CWAL_BUILD_SHARED_LIBS))
+libwhcl.DLL.OBJECTS = $(whcl_obj)
+libwhcl.DLL.LDFLAGS += $(libwhcl.EXTLIBS)
+$(call ShakeNMake.CALL.RULES.DLLS, libwhcl)
+libwhcl.thelib := $(libwhcl.DLL)
+else
+########################################################################
+# Static lib...
+libwhcl.LIB.OBJECTS = $(whcl_obj)
+WHCL_CLIENT_LDFLAGS += $(libwhcl.EXTLIBS)
+$(call ShakeNMake.CALL.RULES.LIBS, libwhcl)
+libwhcl.thelib := $(libwhcl.LIB)
+endif
+$(libwhcl.thelib): $(libcwal.thelib)
+ifneq (1,$(MAKING_CLEAN))
+whcl: $(libwhcl.thelib)
+endif
+endif
+# /libwhcl
+########################################################################
+
+
+ifeq (1,$(WHCLSH_STATIC))
+ WHCL_CLIENT_LDFLAGS += -static
+else ifeq (1,$(WHCL_ENABLE_LOADABLE_MODULES))
+ WHCL_CLIENT_LDFLAGS += -rdynamic
+endif
+
+$(DIR.whcl)/test.BIN.OBJECTS := $(DIR.whcl)/test.o $(whcl_obj)
+$(DIR.whcl)/test.BIN.LDFLAGS := $(WHCL_CLIENT_LDFLAGS)
+$($(DIR.whcl)/test.BIN.OBJECTS): CPPFLAGS+=$(PROJECT_INCLUDES)
+
+$(DIR.whcl)/whclsh.BIN.OBJECTS := $(DIR.whcl)/whclsh.o $(whcl_obj) $(cliapp.OBJ)
+$(DIR.whcl)/whclsh.BIN.LDFLAGS := $(WHCL_CLIENT_LDFLAGS) $(cliapp.CLIENT_LDFLAGS)
+ifeq (1,1)
+# Just for example's sake...
+$($(DIR.whcl)/whclsh.BIN.OBJECTS): CPPFLAGS+=-DWHCLSH_EXTEND
+$(DIR.whcl)/whclsh.BIN.OBJECTS += $(DIR.whcl)/whclsh_extend.o
+endif
+$($(DIR.whcl)/whclsh.BIN.OBJECTS): CPPFLAGS+=$(PROJECT_INCLUDES) $(cliapp.INCLUDES)
+
+$(call ShakeNMake.CALL.RULES.BINS,$(DIR.whcl)/test)
+$(call ShakeNMake.CALL.RULES.BINS,$(DIR.whcl)/whclsh)
+$($(DIR.whcl)/whclsh.BIN): $(libcwal.thelib)
+$($(DIR.whcl)/test.BIN): $(libcwal.thelib)
+
+whclsh.BIN := $($(DIR.whcl)/whclsh.BIN)
+WHCL_CLIENT_BINS := $(whclsh.BIN) $($(DIR.whcl)/test.BIN)
+
+########################################################################
+# External modules...
+DIR.whcl-mod := $(DIR.whcl)/mod
+########################################################################
+# WHCL_MODULE_WHCLTOC eval/call-able which sets up the build of an whcl
+# module's C file from an whcl file, optionally stripped of comments and
+# minified, to save on C stack space (the generated C data is
+# relatively large). This build compiles an whcl file to a C byte array
+# for inclusion into C, e.g. via whcl_set_from_script().
+#
+# This is only to be called by the routine(s) which set(s) up the
+# module rules and only for modules which define module.SCRIPT.whcl.
+#
+# Argument: $1 = module name.
+define WHCL_MODULE_WHCLTOC
+$$(if $$(WHCL.module.$(1).script.whcl),,$$(error missing WHCL.module.$(1).script.whcl))
+WHCL.module.$(1).input.whcl := $$(WHCL.module.$(1).script.whcl)
+WHCL.module.$(1).output.whcl := $$(WHCL.module.$(1).dir)/$(1).out.whcl
+WHCL.module.$(1).output.c := $$(WHCL.module.$(1).dir)/src_$(1).c
+########################################
+# Configurable bits (set them before $(call)'ing this):
+#  WHCL.module.$(1).stripComments (1|0): whether to strip C/C++ comments
+#     from the input.
+#  WHCL.module.$(1).cname (C identifier): the argument to pass to
+#     $(tochararray.bin), i.e. the C function name used to access
+#     the imported bytes.
+# BROKEN BY PORTING:
+WHCL.module.$(1).stripComments ?= 1
+WHCL.module.$(1).script.cname ?= whcl_src_$(1)
+########################################
+$$(WHCL.module.$(1).input.whcl):
+$$(WHCL.module.$(1).output.whcl): $$(WHCL.module.$(1).input.whcl) $$(stripcomments.bin)
+	@echo -n "[$$@]: Creating from: "; \
+	sz=$$$$(ls -la $$(WHCL.module.$(1).input.whcl) | awk '{print $$$$5}'); \
+	echo "[$$(WHCL.module.$(1).input.whcl)]: $$$$sz bytes"
+	@if [ x1 = x$$(WHCL.module.$(1).stripComments) ]; then \
+		echo "[$$@]: stripping comments..."; 	\
+		sed -e '/^[ \t]*#/d' $$(WHCL.module.$(1).input.whcl) > $$@; \
+	else \
+		echo "[$$@]: not stripping comments..."; 	\
+		cp -p $$(WHCL.module.$(1).input.whcl) $$@; \
+	fi
+	@stat -c '[%n]: %s bytes' $$@
+$$(WHCL.module.$(1).output.c): $$(WHCL.module.$(1).output.whcl) $$(tochararray.bin)
+	@echo "[$$@]: converting [$$(WHCL.module.$(1).output.whcl)] to a C function [$$(WHCL.module.$(1).script.cname)()]...."; \
+		$$(tochararray.bin) $$(WHCL.module.$(1).script.cname) < $$(WHCL.module.$(1).output.whcl) > $$@ || exit; \
+		sz=$$$$(ls -la $$@ | awk '{print $$$$5}'); \
+		echo "[$$@]: $$$$sz bytes"
+WHCL.module.$(1).output.o := $$(subst .c,.o,$$(WHCL.module.$(1).output.c))
+$$(WHCL.module.$(1).output.o): $$(WHCL.module.$(1).output.c)
+WHCL.module.$(1).obj += $$(WHCL.module.$(1).output.o)
+ifneq (,$$(WHCL.module.$(1).static.obj))
+$$(WHCL.module.$(1).STATIC.OBJ): $$(WHCL.module.$(1).output.c)
+endif
+CLEAN.whcl-mod-$(1) += \
+  $$(WHCL.module.$(1).output.c) \
+  $$(WHCL.module.$(1).output.whcl) \
+  $$(WHCL.module.$(1).output.o)
+ifneq (,$$(WHCL.module.$(1).static.obj))
+$$(WHCL.module.$(1).static.obj): $$(WHCL.module.$(1).output.c)
+endif
+endef
+# ^^^ WHCL_MODULE_WHCLTOC
+########################################################################
+
+WHCL.MODULE-DEF.makes := $(wildcard $(DIR.whcl-mod)/*/module-def.make)
+$(WHCL.MODULE-DEF.makes):
+WHCL.MODULE-MAKER.sh := $(DIR.whcl)/makeModMake.sh
+$(WHCL.MODULE-MAKER.sh):
+WHCL.MODULE-RULES.make := .make-whcl-mod.make
+$(WHCL.MODULE-RULES.make): \
+  $(word $(words $(MAKEFILE_LIST)),$(MAKEFILE_LIST)) \
+  $(WHCL.MODULE-DEF.makes) $(WHCL.MODULE-MAKER.sh)
+	@bash $(WHCL.MODULE-MAKER.sh) > $@
+-include $(WHCL.MODULE-RULES.make)
+
+WHCL.module.require.dir := $(DIR.whcl)
+WHCL.module.require.obj := $(DIR.whcl)/require.o
+WHCL.module.require.script.whcl := $(DIR.whcl)/require.d/require.whcl
+$(eval $(call WHCL_MODULE_WHCLTOC,require))
+
+# /external modules
+########################################################################
+$(DIR.whcl)/mod.o: $(WHCL.MODULE_SRC_ALL)
+$(eval $(call ADD_C_DEPS,whcl,\
+	$(wildcard $(DIR.whcl)/*.[ch]) \
+	$(wildcard $(DIR.include)/wh/libwhcl.h) \
+	$(wildcard $(DIR.include)/wh/cwal/whcl/*.h) \
+))
+
+ifneq (1,$(MAKING_CLEAN))
+whcl: $($(DIR.whcl)/test.BIN) $(whclsh.BIN)
+whcl-mod:
+whcl: whcl-mod
+endif
+CLEAN.whcl += $($(DIR.whcl)/test.BIN) \
+    $(whclsh.BIN) \
+	$(BIN.KWHASHER) \
+	$(wildcard $(DIR.whcl)/*.o $(DIR.whcl)/UNIT.whcl) \
+	$(wildcard $(DIR.whcl)/*~ $(DIR.whcl)/unit/*~) \
+	$(wildcard $(DIR.whcl)/unit/*.vg $(DIR.whcl)/*.vg) \
+	$(wildcard $(DIR.whcl)/unit/*.massif $(DIR.whcl)/*.massif)
+
+########################################################################
+# whcl amalgamation...
+libwhcl.h := libwhcl.h
+libwhcl.c := $(subst .h,.c,$(libwhcl.h))
+libwhcl.o = $(subst .h,.o,$(libwhcl.h))
+
+$(libwhcl.h): $(libcwal.h)
+$(libwhcl.c): $(libcwal.c) $(libwhcl.h)
+$(libwhcl.o): CPPFLAGS:=$(filter-out -DHAVE_AUTOCONFIG_H,$(CPPFLAGS))
+
+libwhcl.h.SRC := \
+	$(libcwal.h) \
+	$(addprefix $(DIR.inccwal)/whcl/, \
+	whcl_config.h \
+	whcl.h) \
+
+libwhcl.c.SRC := \
+	$(libcwal.c) \
+	$(DIR.whcl)/tok1.h \
+	$(DIR.whcl)/script.h \
+    $(DIR.whcl)/internal.h \
+	$(whcl_src)
+
+WHCL_AMAL_MAKEFILE_DEPS := $(filter-out $(ShakeNMake.CISH_DEPS_FILE),$(MAKEFILE_LIST))
+$(WHCL_AMAL_MAKEFILE_DEPS):
+$(libwhcl.h): $(libwhcl.h.SRC) $(WHCL_AMAL_MAKEFILE_DEPS)
+	@echo "Creating $@..."
+	@{ \
+		echo '#if !defined(WANDERINGHORSE_NET_CWAL_WHCL_AMALGAMATION_H_INCLUDED)'; \
+		echo '#define WANDERINGHORSE_NET_CWAL_WHCL_AMALGAMATION_H_INCLUDED'; \
+		echo '#if !defined(WHCL_AMALGAMATION_BUILD)'; \
+		echo '#  define WHCL_AMALGAMATION_BUILD'; \
+		echo '#endif'; \
+		echo '#if !defined(_WIN32)'; \
+		echo '#  if ! defined(_XOPEN_SOURCE)'; \
+		echo '   /** on Linux, required for usleep(). */'; \
+		echo '#    define _XOPEN_SOURCE 500'; \
+		echo '#  endif'; \
+		echo '#  ifndef _XOPEN_SOURCE_EXTENDED'; \
+		echo '#    define _XOPEN_SOURCE_EXTENDED'; \
+		echo '#  endif'; \
+		echo '#  ifndef _BSD_SOURCE'; \
+		echo '#    define _BSD_SOURCE'; \
+		echo '#  endif'; \
+		echo '#  ifndef _DEFAULT_SOURCE'; \
+		echo '#    define _DEFAULT_SOURCE'; \
+		echo '#  endif'; \
+		echo '#endif'; \
+		for i in $(libwhcl.h.SRC); do \
+			echo "/* start of file $$i */"; \
+			cat $$i; \
+			echo "/* end of file $$i */"; \
+		done; \
+		echo '#endif/*!defined(WANDERINGHORSE_NET_CWAL_WHCL_AMALGAMATION_H_INCLUDED)*/'; \
+	} | sed \
+		-e '/[ ]*#[ ]*include[ ]*["]lib.*\.h["]/d' \
+		-e '/[ ]*#[ ]*include[ ]*["]wh\/.*\.h["]/d' \
+		-e '/[ ]*#[ ]*include[ ]*["]tok.*\.h*["]/d' \
+		-e '/[ ]*#[ ]*include[ ]*["]whcl.*\.h*["]/d' \
+		-e '/[ ]*#[ ]*include[ ]*["]internal\.h*["]/d' \
+		> $@
+
+$(libwhcl.c): $(libwhcl.h) $(libwhcl.c.SRC) $(WHCL_AMAL_MAKEFILE_DEPS)
+	@echo "Creating $@..."
+	@{ \
+		echo '#include "$(libwhcl.h)"'; \
+	} > $@
+	@{ \
+		for i in $(libwhcl.c.SRC); do \
+			echo "/* start of file $$i */"; \
+			cat "$$i"; \
+			echo "/* end of file $$i */"; \
+		done; \
+	} | sed \
+		-e '/[ ]*#[ ]*include[ ]*["].*\.h["]/d' \
+		>> $@
+
+
+CLEAN.whcl += $(libwhcl.c) $(libwhcl.h) $(libwhcl.o)
+amal-whcl: $(libwhcl.o)
+amal: amal-whcl
+# /whcl amalgamation
+########################################################################

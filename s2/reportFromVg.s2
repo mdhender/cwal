@@ -1,0 +1,40 @@
+#!./s2sh
+/* A quick hack to pull some info from VG.report.csv (generated
+   by the 'vg' family of makefile rules). */
+const infile = 'VG.report.csv';
+// fields: script,allocs,frees,totalMemory,peakMemUsage,peakMemUsageUnit
+const stats = {
+    combo: []
+};
+
+foreach(@s2.Buffer.readFile(infile).takeString().split('\n')
+        => line){
+    line || continue;
+    const ar = line.split('\t');
+    if('unit/000-000-0empty.s2'===ar.0){
+        stats.base = {
+            script: ar.0,
+            allocs: +ar.1, totalMem: +ar.3, peakMem: +ar.4, peakUnit: ar.5
+        };
+    }else if(0===ar.0.indexOf('UNIT')){
+        stats.combo[] = {
+            script: ar.0,
+            allocs: +ar.1, totalMem: +ar.3, peakMem: +ar.4, peakUnit: ar.5
+        };
+    }
+};
+
+print('Base (aka "overhead") memory from',stats.base.script)
+    ('\tallocs =', stats.base.allocs)
+    ('\ttotalMem =', stats.base.totalMem)
+    ('\tpeakMem =', stats.base.peakMem, stats.base.peakUnit)
+;
+
+stats.combo.eachIndex(proc(obj){
+    affirm obj.peakUnit === stats.base.peakUnit;
+    print(obj.script,'deltas:')
+    ('\tallocs =', obj.allocs, '==>', (obj.allocs - stats.base.allocs).toString('+d'))
+    ('\ttotalMem =', obj.totalMem, '==>', (obj.totalMem - stats.base.totalMem).toString('+d'))
+    ('\tpeakMem =', obj.peakMem, obj.peakUnit, '==>', (obj.peakMem - stats.base.peakMem).toString('+d'), obj.peakUnit)
+});
+

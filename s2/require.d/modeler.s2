@@ -1,0 +1,459 @@
+/**
+   An experimental "live model" mini-framework, supporting "data
+   model" objects with change listeners.
+
+   It works like this...
+
+   This top-level module provides the overall framework. Use its
+   loadModel() or extendModel() methods to create new DataModel classes,
+   which derive from this module's DataModel member. Use the DataModel.new()
+   method to create new instances of the model class. Use the
+   inherited DataModel.attr() method to manage the model instance's attributes,
+   addListener() to add change listeners, removeListener() to remove
+   them. See the docs below for the other methods.
+
+   This module is intended to be a singleton. To get multiple
+   independent instances of it, include this file multiple times.
+*/
+const Modeler = {
+    config:{
+        modelDirName: ((const fd = __FILEDIR) ? fd : '')+'DataModels',
+        /**
+           A PathFinder instance used for searching for model script
+           files.
+        */
+        pf: s2.PathFinder.new(),
+        cacheModels: true
+    }.withThis(proc(){
+        // Search paths for loadModel()...
+        this.pf.suffix = ['.s2'];
+        this.pf.prefix = [this.modelDirName];
+    }),
+    /**
+       For the given base model name this function uses
+       this.pf.search() to try to find a file. If it finds none, it
+       throws. If it finds one, it is assumed to be an s2 script
+       compatible with this class, it is s2.import()ed. Its result is
+       assumed to be either a plain Object or an this.DataModel
+       subclass, which is then passed to this.extendModel().
+
+       Returns the model on success, throws on error.
+    */
+    loadModel: proc(name){
+        (var m = this.config.cacheModels ? cache[name] : 0) && return m;
+        const pf = this.config.pf, fn = pf.search(name);
+        fn || throw exception(
+            'CWAL_RC_NOT_FOUND',
+            "DataModel '%1$s' not found in search path %2$J with extensions %3$J."
+                .applyFormat(name, pf.prefix, pf.suffix));
+        m = s2.import.call(this, fn);
+        const tn = typename m;
+        if((tn === 'object') || (tn === typename this.DataModel)){
+            // Derive its typename from the file name.
+            if(var sep = fn.indexOf('/')>=0 ? '/' : fn.indexOf('\\')>=0 ? '\\' : 0){
+                m.__typename = fn.split(sep).pop().split('.').shift();
+            }
+        }
+        return this.config.cacheModels
+            ? cache[name] = this.extendModel(m)
+            : this.extendModel(m);
+    }.importSymbols({
+        cache: {}
+    }),
+    /**
+       Initializes a "model class." The argument must be a container
+       following the this.DataModel conventions. Namely, it should provide
+       an initialize() method for setting up instances of the model. If it
+       has no initialize() method and the inherited DataModel.new() method is
+       passed an Object then it calls attr() once for each parameter.
+
+       If modelClass does not inherit this.DataModel then this function
+       sets its prototype to this.DataModel.
+
+       Returns its first parameter on success, throws on error.
+    */
+    extendModel: proc(modelClass){
+        affirm typeinfo(iscontainer modelClass) /* expecting a container value */;
+        (modelClass inherits this.DataModel) || (modelClass.prototype = this.DataModel);
+        //print(__FLC,'modelClass type:',typename modelClass);
+        return modelClass;
+    },
+    /**
+       The base DataModel type from which client DataModel types must derive.
+    */
+    DataModel:{
+        __typename: 'DataModel',
+
+        /**
+           Gets or sets model attributes.
+
+           If passed no args, it returns the attributes object
+           (creating it if needed). If this object's protototype has
+           an attributes property, the returned property (of _this_
+           value) shall inherit this.prototype.attributes (if any), so
+           property lookups via the returned object will find
+           inherited model properties. Not yet sure if that's a feature
+           or bug.
+
+           If passed one argument:
+
+           - If the one argument is a container type then all properties
+           in it (not inherited properties) are copied to this model and
+           'this' is returned.
+
+           - Otherwise it returns the value for the given attribute
+           key, or undefined if not found.
+
+           If passed two arguments it sets the given attribute key and
+           (if the value is changed) updates any listeners. As a special
+           case, if the value part is undefined, this function behaves
+           as if rmAttr() had been called.
+
+           If this model is in "quiet" mode, change events are not
+           fired.
+        */
+        attr: proc callee(){
+            if(!this.hasOwnProperty('attributes')){
+                this.attributes = {};
+                if(//why doesn't this work?  (this.prototype inherits this.DataModel)&&
+                    this.prototype.attributes){
+                    this.attributes.prototype = this.prototype.attributes
+                    // so that attr lookup is recursive wrt this model's prototype
+                    ;
+                }
+            }
+            if(!(const argc = argv.length())) return this.attributes;
+            else if((const K = argv.0), 1===argc){
+                if(!typeinfo(iscontainer K)){
+                    return this.attributes[K];
+                }else{
+                    const model = this;
+                    const _attrChanged_ = {}
+                    /* Changed attributes, for event puruposes.
+                       Reminder: don't store these in callee (which
+                       would be easier/safer) b/c that would upscope
+                       every key and value to callee's owning
+                       scope! */;
+                    const ex = catch{
+                        s2.eachProperty.call(K, callee.copyEach
+                                             ||| (callee.copyEach=proc(k,v){model.attr(k,v)}));
+                        _attrChanged_.isEmpty() || this.fireChangeEvent(_attrChanged_);
+                    };
+                    ex ? throw ex : return this;
+                }
+            }else if( this.attributes[K]!==const V = argv.1 ){
+                (undefined === V) ? this.attributes.unset(K) : this.attributes[K] = V;
+                if('undefined'!==typename _attrChanged_/*via recursive call*/) _attrChanged_[K] = V;
+                else if(!this.$mstate.quiet) this.fireChangeEvent(K,V);
+                return this;
+            }
+        },
+
+        /**
+           Behaves the same as passing the undefined value as the 2nd
+           parameter to this.attr(K,undefined).
+
+           Removes a single attribute and triggers a change event (if
+           not in quiet mode). The event will get the undefined value
+           as the value, but note that undefined is also a legal
+           attribute value.
+
+           Returns this object.
+        */
+        rmAttr: proc(K){
+            if(this.hasOwnProperty('attributes')
+               && this.attributes.hasOwnProperty(K)){
+                this.attributes.unset(K);
+                this.$mstate.quiet || this.fireChangeEvent(K,undefined);
+            }
+            return this;
+        },
+
+        /**
+           Unconditionally fires a change event for the given key,
+           notifying all listeners of the given key as well as any
+           wildcard listeners (in an unspecified order). Each callback
+           is passed the (Key,Value,DataModel) related to the change,
+           with Value being the new value and DataModel being the
+           origin of the change.
+        */
+        fireChangeEvent:proc(K){
+            const M = this, attr = this.attr(), V = attr[K];
+            const li = [this.$mstate.listenersAll,
+                        typeinfo(iscontainer K)
+                        ? undefined
+                        : argv.isEmpty()
+                        ? undefined
+                        : this.$mstate.listenersOne[K] ];
+            for( var i = 0, lnr = li[i]; i < 2; lnr=li[++i] ){
+                lnr || continue;
+                affirm 'array' === typename lnr;
+                lnr.eachIndex(notifierEach);
+            }
+            this.$mstate.dirty = true;
+            return this;
+        }.importSymbols({
+            notifierEach: proc(entry){
+                entry[0](K,V,M);
+            }
+        }),
+
+        /**
+           Creates a new instance of this model, passing on any
+           arguments to the initialize() method of the model.  The
+           returned object is a basic object which has "this" as its
+           prototype.
+        */
+        new: proc(){
+            print(__FLC,'new()');
+            const model = {
+                prototype: this,
+                /* Private model-internal state. */
+                $mstate: {
+                    listenersAll: [],
+                    listenersOne: {}
+                    /* other flags which might get set:
+
+                       .dirty: bool indicates whether the model's
+                       attributes have been modified.
+
+                       .quiet: bool squelches event-firing in some
+                       contexts.
+                     */
+                }
+            };
+            const obj=argv.0, isPropObj = typeinfo(iscontainer obj);
+            if(typeinfo(iscallable this.initialize)){
+                // add a super() function if the prototype has an
+                // initialize() method. UNTESTED!
+                const myProto = (this.prototype inherits this.DataModel)
+                    ? this.prototype
+                    : undefined,
+                super = (myProto && myProto.initialize && myProto.initialize!==this.initialize)
+                ? proc(){return myProto.initialize.apply(model,argv)}.
+                    importSymbols(nameof model, nameof myProto)
+                : undefined;
+                model.attr() /* ensure model.attributes is in place */;
+                this.initialize.apply(model, argv);
+                model.isModified(false);
+            }else if(isPropObj){
+                model.attr(obj);
+            }
+            return model;
+        },
+
+        /**
+           Adds a new attribute change listener callback function
+           to this model, such that changes made to the model via
+           this.attr() will trigger any callbacks.
+
+           If passed one argument, it must be callable, and it will
+           be called for any property changes via attr().
+
+           If passed two arguments, the first is the property key to
+           monitor and the second is the callback (as described
+           above). The callback will only be called when the given
+           property is changed.
+
+           When the callback is triggered, it is passed
+           (DataModel,changedKey,newValue). It is called after
+           the value is changed.
+
+           Returns an opaque key type which can be used to
+           unregister the listener via removeListener().
+         */
+        addListener: proc(/*[key,] callback*/){
+            const argc = argv.length(), rc = argc ? [] : 0;
+            if(1===argc){
+                rc[] = argv.0;
+                this.$mstate.listenersAll[] = rc;
+            }else if(2===argc){
+                rc[] = argv.1;
+                rc[] = argv.0;
+                (this.$mstate.listenersOne[argv.0]
+                 ||| (this.$mstate.listenersOne[argv.0]=[]))[] = rc;
+            }else{
+                throw exception('CWAL_RC_MISUSE',
+                                "Expecting (key,callback) or (callback) args.");
+            }
+            return rc;
+        },
+
+        /**
+           If passed an argument, it is assumed to have come from
+           addListener(). Returns true if it removes the listener,
+           false if it was not found.
+
+           If passed no arguments, ALL listeners are cleared and
+           this object is returned.
+         */
+        removeListener: proc(id){
+            if(argv.isEmpty()){
+                this.$mstate.listenersOne.clearProperties();
+                this.$mstate.listenersAll.clear();
+                return this;
+            }
+            affirm 'array' === typename id /* expecting addListener() result as argument */;
+            const ar = (undefined===id.1)
+                ? this.$mstate.listenersAll
+                : this.$mstate.listenersOne[id.1];
+            return (const ndx = ar ? ar.indexOf(id) : -1)>=0
+                ? ar.removeIndex(ndx) : false;
+        },
+
+        /**
+           Gets or sets the is-modified flag.
+
+           If passed no arguments: returns true if this model has been
+           modified since the last time it was not, else
+           false. Initialization does not count as modification.
+
+           If called with an argument: force-sets this model's
+           dirty-flag to !!argv[0]. Does not trigger any
+           events. Returns this object.
+        */
+        isModified: proc(){
+            return argv.isEmpty()
+            ? this.$mstate.dirty
+            : ((this.$mstate.dirty=!!argv.0), this);
+        },
+
+        /**
+           Gets or sets the quiet-mode flag (which bypasses firing
+           change events in some cases when enabled).
+
+           If passed no arguments: returns true if this model is in
+           "quiet mode," else false.
+
+           If called with an argument: it sets this model's quiet-mode
+           flag to !!argv[0]. Does not trigger any events. Returns
+           this object.
+        */
+        isQuiet: proc(){
+            return argv.isEmpty()
+            ? this.$mstate.quiet
+            : ((this.$mstate.quiet=!!argv.0), this);
+        },
+
+        /**
+           Returns a plain object in this form:
+
+           { type: typename this,
+             attributes: this.attributes
+             }
+
+             except that if a given attribute's value has a toJSON()
+             method, that method is used to serialize it, otherwise
+             the value is used as-is for JSON purposes (which will
+             fail when to-string'ing it if the structure contains
+             cycles).
+        */
+        toJSON: proc(){
+            const rc = {type: typename this, attributes: {}};
+            this.attributes && this.attributes.eachProperty(eachToJSON);
+            return rc;
+        }.importSymbols({
+            eachToJSON: proc(k,v){
+                rc.attributes[k] = (typeinfo(isderefable v) && v.toJSON)
+                ? v.toJSON()
+                : v;
+            }
+        })
+    }/*end DataModel*/
+};
+
+if('undefined' !== typename requireS2){
+    return Modeler;
+}else if(1){
+    print(__FLC,"Running Modeler tests...");
+    const M = Modeler;
+    print(__FLC,'search path/ext =',M.config.pf.prefix, M.config.pf.suffix);
+
+    const MyModel = M.loadModel('TestModel');
+    assert MyModel inherits M.DataModel;
+    var m = MyModel.new(1,2,3);
+    print(__FLC, 'm =',m);
+    assert m inherits MyModel;
+    assert m inherits M.DataModel;
+    //print(__FLC, 'MyModel.attr() =',MyModel.attr());
+    //print(__FLC, 'm.attr() =',m.attr());
+    //print(__FLC, 'm.$mstate =',m.$mstate);
+    assert !m.isModified();
+    assert m.isModified(true);
+    assert m === m.isModified(false);
+    assert !m.isModified();
+    //print(__FLC, 'm.$mstate =',m.$mstate);
+    //print(__FLC,m.attr().foo);
+    assert -1 === m.attr().foo;
+    assert -1 === m.attr('foo');
+    assert 1 === m.attributes.a;
+    assert 2 === m.attributes.b;
+    assert 3 === m.attributes.c;
+    assert !m.attributes.hasOwnProperty('x');
+    assert -1 === m.attributes.foo /* inherited via the prototype model! */;
+    m.attr('foo',0);
+    assert 0 === m.attributes.foo;
+    assert -1 === m.attributes.prototype.foo;
+    unset m.attributes.foo;
+    assert -1 === m.attributes.foo;
+    m.isModified(false);
+
+    var mj = m.toJSON();
+    print(__FLC, 'mj =',mj);
+    assert 'TestModel' === mj.type;
+    assert mj.attributes;
+    assert !mj.attributes.hasOwnProperty('foo') /* b/c derived attributes are not serialized */;
+    assert !mj.foo /* b/c derived attributes are not serialized */;
+    //assert mj.attributes.x === m.attr('x') /* b/c of our inheritance trick */;
+    assert m.attr('a')===mj.attributes.a;
+    assert m.attr('b')===mj.attributes.b;
+    assert m.attr('c')===mj.attributes.c;
+
+    // Change listeners and notifications...
+    const changes = {'*': 0, 'a': 0};
+    var allA = m.addListener(proc(k,v,m){
+        ++changes.'*';
+        print(__FLC,"From the 'all' change listener.",k,v);
+    });
+    //print(__FLC, 'allA =',allA);
+    m.addListener('a', proc(k,v,m){
+        ++changes.(k);
+        print(__FLC,"From the [",k,"] change listener.",k,v);
+    });
+    assert 0 === changes.a;
+    assert 0 === changes.'*';
+    assert 1 === m.attr('a');
+    m.attr('a', 1);
+    assert !m.isModified() /* same value as before, i.e. no change */;
+    m.attr('a', 3);
+    assert 3 === m.attr('a');
+    assert m.isModified();
+    assert 1 === changes.a;
+    assert 1 === changes.'*';
+    m.attr('b', 7);
+    assert 7 === m.attr('b');
+    assert 1 === changes.a;
+    assert 2 === changes.'*';
+    //print(__FLC, m.toJSON());
+    //print(__FLC, 'callCounts:',changes);
+    affirm true === m.removeListener(allA);
+    affirm false === m.removeListener(allA);
+    m.attr('a', 0);
+    m.attr('a', 0); // w/ same value
+    assert 2 === changes.a;
+    assert 2 === changes.'*';
+    m.attr('a', 1);
+    assert 3 === changes.a;
+    assert 2 === changes.'*';
+    //print(__FLC, 'callCounts:',changes);
+    //print(__FLC, m.toJSON());
+    m.removeListener().attr('a', 13);
+    assert 3 === changes.a;
+    assert 2 === changes.'*';
+    //print(__FLC, 'callCounts:',changes);
+    //print(__FLC, m.toJSON());
+
+    m.attr('a', undefined);
+    assert !m.attributes.hasOwnProperty('a');
+    assert undefined === m.attr('a');
+}

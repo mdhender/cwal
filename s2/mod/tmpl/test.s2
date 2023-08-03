@@ -1,0 +1,28 @@
+const tmpl = s2.tmpl ||| s2.loadModule('tmpl.so');
+print(__FLC,'tmpl():',tmpl);
+
+
+const doc = new s2.Buffer() << <<<EOF
+Hi, <%name%>!
+<?
+    for(var i = 0; i < max; ++i, ++incrThis ){
+        print('i =',i);
+    }
+?>
+EOF;
+
+const banner = '============================================================',
+      ban = '==============================';
+const compiled =
+    tmpl(doc,{ // OPTIONAL flags...
+            outputSymbol: 'myout'    
+    });
+print(banner)("Raw doc:")(ban)(doc)
+(banner)("Compiled doc:")(ban)(compiled)
+(banner)("Eval'd doc:")(ban)
+;
+const myout = s2out;
+var incrThis = 0;
+compiled.evalContents('test buffer',{name:'You', max: 4});
+assert 4 === incrThis;
+print(banner)('Done');

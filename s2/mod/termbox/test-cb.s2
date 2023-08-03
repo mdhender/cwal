@@ -1,0 +1,59 @@
+const tb = s2.termbox ||| s2.loadModule('termbox.so');
+
+const ex = catch{
+    const CB = tb.CellBuffer;
+    const cb = new CB(20, 1);
+    const C = tb.color, A = tb.attr;
+    cb.cell(0, 0, '*', C.white | A.bold, C.blue)
+        .print5(1, 0, C.white|A.bold, -1, "hello")
+        .cell(cb.width()-1, 0, '*', C.white | A.bold,
+              C.blue)
+    ;
+
+    tb.init();
+
+    const cb2Pos = {
+        x: tb.width()/2-2,
+        y: tb.height()/2-2
+    };
+    
+    const cb2 = new CB(11,8)
+          .fill(42, C.yellow | A.bold, C.cyan)
+          .print3(0, 2, "peep")
+          .blit(cb2Pos.x, cb2Pos.y)
+    ;
+
+    cb.blit(0, 0);
+    tb.present().poll();
+    
+    cb.cell(cb.width()/2, 0, '*', C.white | A.bold, C.red)
+        .blit(0,1);
+    cb2.clearLine(2)
+        .lineH(0, 0, cb2.width()-1)
+        .lineV(cb2.width()/2, 1, cb2.height()-2)
+        .blit(cb2Pos.x, cb2Pos.y);
+
+    tb.present().poll();
+
+    for( var i = 0; i < 2; ++i ){
+        cb2.reverseAttr().blit(cb2Pos.x, cb2Pos.y);
+        tb.present().poll();
+    }
+
+    cb.lineH(1,0,cb.width()-2)
+        .blit(0, 1)
+    ;
+    cb2.fill('#')
+        .boxIn(1)
+        //.boxIn2('-','|')
+        .scrollBarV(cb2.width()-1, 1, cb2.height()-2, 50, 10)
+        .scrollBarH(1, cb2.height()-1, cb2.width()-2, 30, 10)
+        .fill( -1, C.black, C.white | A.bold )
+        .blit(cb2Pos.x, cb2Pos.y)
+    ;
+    
+    tb.present().poll();
+    
+};
+tb.shutdown();
+ex && throw ex;
