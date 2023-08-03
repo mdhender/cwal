@@ -1,0 +1,171 @@
+cmake_minimum_required(VERSION 3.5)
+project(cwal C)
+include_directories(src)
+
+set(CMAKE_C_STANDARD 99)
+
+add_library(cwal
+        src/cwal.c
+        src/cwal_format.c
+        src/cwal_json.c
+        src/cwal_printf.c
+        src/cwal_utf.c
+        src/sanity.c
+        src/test.c
+		src/JSON_parser/JSON_parser.c
+)
+
+add_executable(jp
+        src/JSON_parser/main.c
+        src/JSON_parser/JSON_parser.c
+)
+
+add_library(s2
+		s2/array.c
+		s2/bench/000-000-fisqrt.c
+		s2/c9n.c
+		s2/cliapp.c
+		s2/enum.c
+		s2/eval.c
+		s2/fs.c
+		s2/func.c
+		s2/hash.c
+		s2/io.c
+		s2/linenoise/linenoise-win32.c
+		s2/linenoise/linenoise.c
+		s2/linenoise/stringbuf.c
+		s2/linenoise/utf8.c
+		s2/mod.c
+		s2/mod/FILE/mod_FILE.c
+		s2/mod/FILE/static_module.c
+		s2/mod/_attic/mod_multi.c
+		s2/mod/_attic/s2_ffi.c
+		s2/mod/_template/static_module.c
+		s2/mod/_template/template.c
+		s2/mod/cgi/cgimod.c
+		s2/mod/cgi/s2_cgi.c
+		s2/mod/cgi/static_module.c
+		s2/mod/dirent/mod_dirent.c
+		s2/mod/dirent/static_module.c
+		s2/mod/felta/felta.c
+		s2/mod/felta/mod_felta.c
+		s2/mod/felta/static_module.c
+		s2/mod/hashing/hashing.c
+		s2/mod/hashing/static_module.c
+		s2/mod/hashing/whsha1.c
+		s2/mod/hashing/whsha3.c
+		s2/mod/io/mod_io.c
+		s2/mod/io/static_module.c
+		s2/mod/iterate/iterate.c
+		s2/mod/iterate/static_module.c
+		s2/mod/json/mod_json.c
+		s2/mod/json/static_module.c
+		s2/mod/math/math.c
+		s2/mod/math/static_module.c
+		s2/mod/ob/mod_ob.c
+		s2/mod/ob/static_module.c
+		s2/mod/popen2/mod_popen2.c
+		s2/mod/popen2/static_module.c
+		s2/mod/regex_js/jsregex.c
+		s2/mod/regex_js/regexp.c
+		s2/mod/regex_js/static_module.c
+		s2/mod/regex_js/utf.c
+		s2/mod/regex_js/utftype.c
+		s2/mod/regex_posix/mod_porex.c
+		s2/mod/regex_posix/s2rx_common_static.c
+		s2/mod/regex_posix/static_module.c
+		s2/mod/require/require.c
+		s2/mod/require/static_module.c
+		s2/mod/sample/sample_module.c
+		s2/mod/sqlite3/mod_sqlite3.c
+		s2/mod/sqlite3/s2x_sq3.c
+		s2/mod/sqlite3/static_module.c
+		s2/mod/termbox/mod_termbox.c
+		s2/mod/termbox/static_module.c
+		s2/mod/time/mod_time.c
+		s2/mod/time/static_module.c
+		s2/mod/tmpl/static_module.c
+		s2/mod/tmpl/tmpl.c
+		s2/mod/uuid/static_module.c
+		s2/mod/uuid/uuid.c
+		s2/mod/uuid/whuuid.c
+		s2/number.c
+		s2/ob.c
+		s2/ops.c
+		s2/pf.c
+		s2/protos.c
+		s2/s2.c
+		s2/shell.c
+		s2/shell2.c
+		s2/shell_common.c
+		s2/shell_extend.c
+		s2/str.c
+		s2/strftime.c
+		s2/t10n.c
+		s2/test.c
+		s2/time.c
+		s2/tmpl.c
+		s2/unix.c
+)
+
+add_library(t10n
+        t10n/c9n.c
+        t10n/t10n.c
+        t10n/test.c
+)
+
+add_library(tools
+		tools/minihash.c
+		tools/mkcdep.c
+		tools/stripcomments.c
+		tools/tochararray.c
+)
+
+add_executable(whcl
+        whcl/expr.c
+        whcl/foreach.c
+        whcl/fs.c
+        whcl/kwhash.c
+        whcl/kwhasher.c
+        whcl/math.c
+        whcl/mod.c
+        whcl/mod/_template/static_module.c
+        whcl/mod/_template/template.c
+        whcl/mod/cgi/cgimod.c
+        whcl/mod/cgi/cwal_cgi.c
+        whcl/mod/cgi/static_module.c
+        whcl/mod/popen2/mod_popen2.c
+        whcl/mod/popen2/static_module.c
+        whcl/mod/regex-posix/porex.c
+        whcl/mod/regex-posix/rx_common_static.c
+        whcl/mod/regex-posix/static_module.c
+        whcl/mod/sample/sample_module.c
+        whcl/mod/sample/static_module.c
+        whcl/mod/sample_script/module.c
+        whcl/mod/sample_script/static_module.c
+        whcl/mod/sqlite3/mod_sqlite3.c
+        whcl/mod/sqlite3/static_module.c
+        whcl/mod/sqlite3/whx_sq3.c
+        whcl/ob.c
+        whcl/ops.c
+        whcl/os.c
+        whcl/pragma.c
+        whcl/script.c
+        whcl/sfunc.c
+        whcl/strftime.c
+        whcl/t_array.c
+        whcl/t_exception.c
+        whcl/t_func.c
+        whcl/t_number.c
+        whcl/t_obj.c
+        whcl/t_pf.c
+        whcl/t_string.c
+        whcl/test.c
+        whcl/time.c
+        whcl/tmpl.c
+        whcl/tok1.c
+        whcl/util.c
+        whcl/whcl.c
+        whcl/whclsh.c
+        whcl/whclsh_extend.c
+)
