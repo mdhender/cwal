@@ -1,0 +1,11 @@
+*~
+*.Z
+*.bz2
+*.exe
+*.gz
+*.o
+*.swp
+*.tar
+*.tgz
+.idea/
+cmake-build-debug/
